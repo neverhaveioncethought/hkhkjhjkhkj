@@ -39,15 +39,17 @@ def init_db():
     conn.close()
 
 # Helper function to get a user's balance from the database
-def ensure_user_initialized(user_id):
-    conn = sqlite3.connect(DATABASE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT balance FROM user_balances WHERE user_id = ?", (user_id,))
-    if cursor.fetchone() is None:
-        cursor.execute("INSERT INTO user_balances (user_id, balance) VALUES (?, ?)", (user_id, INITIAL_BALANCE))
-        cursor.execute("INSERT INTO user_stats (user_id, total_bet, total_winnings) VALUES (?, 0, 0)")
-        conn.commit()
-    conn.close()
+def ensure_game_initialized(user_id):
+    """Initialize the game state for the user if it doesn't already exist."""
+    if user_id not in games:
+        games[user_id] = {
+            'bet': 0,
+            'level': 0,
+            'mode': None,
+            'correct_buttons': [],
+            'status': 'placing_bet',
+            'last_bet': 0  # Initialize with 0 for first-time players
+        }
 
 def get_user_balance(user_id):
     conn = sqlite3.connect(DATABASE)
@@ -325,25 +327,25 @@ async def handle_bet_option(update: Update, context):
     user_id = user.id
     data = query.data.split('_')
 
-    # Ensure game data is initialized
-    ensure_user_initialized(user_id)
+    # Ensure the game state is initialized for the user
+    ensure_game_initialized(user_id)
 
-    # Get the user's current balance from the database
+    # Get the user's current balance
     current_balance = get_user_balance(user_id)
 
-    # Initialize bet variable with a default value
+    # Initialize bet variable
     bet = None
 
     if len(data) > 1:
         if data[1] == 'quarter':
-            bet = current_balance / 4  # Bet exactly 1/4 of the current balance
+            bet = current_balance / 4  # Bet 1/4 of current balance
         elif data[1] == 'half':
-            bet = current_balance / 2  # Bet exactly 1/2 of the current balance
+            bet = current_balance / 2  # Bet 1/2 of current balance
         elif data[1] == 'double':
             last_bet = games[user_id]['last_bet']
-            bet = last_bet * 2  # Bet exactly 2x the last bet
+            bet = last_bet * 2  # Bet 2x the last bet
         elif data[1] == 'custom':
-            # Set the game status to awaiting custom bet
+            # Set the game status to await custom bet input
             games[user_id]['status'] = 'awaiting_custom_bet'
             await send_reply(
                 update,
@@ -353,16 +355,11 @@ async def handle_bet_option(update: Update, context):
             )
             return
     else:
-        # If the data is not in the expected format, send an error message
-        await send_reply(
-            update,
-            context,
-            "Received malformed data. Please try again."
-        )
+        await send_reply(update, context, "Received malformed data. Please try again.")
         return
 
-    # Check if the bet is valid before proceeding
     if bet is not None:
+        # Validate that bet doesn't exceed balance
         if bet > current_balance:
             await send_reply(
                 update,
@@ -374,11 +371,8 @@ async def handle_bet_option(update: Update, context):
             # Process the bet if balance is sufficient
             await process_bet(update, context, bet, user_id)
     else:
-        await send_reply(
-            update,
-            context,
-            "An error occurred processing your bet. Please try again."
-        )
+        await send_reply(update, context, "An error occurred processing your bet. Please try again.")
+
 
 
 # Cancel the bet and reset the game
@@ -415,14 +409,15 @@ async def handle_try_again(update: Update, context):
     user = query.from_user
     data = query.data.split('_')
 
-    # Ensure user data is initialized
-    ensure_user_initialized(user_id)
+    # Ensure the game state is initialized
+    ensure_game_initialized(user_id)
 
-    # Prevent multiple selections
+    # Check if the user is already in a game
     if games[user_id].get('status') == 'playing':
         await query.answer("You are already in a game.", show_alert=True)
         return
 
+    # Prevent interacting with the wrong game
     if int(data[2]) != user_id:
         await query.answer("You cannot interact with this game.", show_alert=True)
         return
@@ -438,7 +433,6 @@ async def handle_try_again(update: Update, context):
         )
         return
 
-    # Fetch player's name
     if user.username:
         player_name = f"@{user.username}"
     else:
@@ -457,7 +451,6 @@ async def handle_try_again(update: Update, context):
         [InlineKeyboardButton("Enter Custom Bet", callback_data=f"bet_custom_{user_id}")]
     ]
 
-    # Prompt the user to place a new bet based on the last bet
     await send_reply(
         update,
         context,
@@ -465,9 +458,8 @@ async def handle_try_again(update: Update, context):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-    # Update the game status to prevent multiple selections
+    # Update the game status
     games[user_id]['status'] = 'placing_bet'
-
 
 
 
@@ -476,33 +468,30 @@ async def process_bet(update: Update, context, bet, user_id):
     """Process the bet, check balance, and ask for difficulty selection."""
     user = update.message.from_user if update.message else update.callback_query.from_user
 
-    # Fetch current balance from the database
+    # Fetch the current balance from the database
     current_balance = get_user_balance(user_id)
 
+    # Check if the bet exceeds the balance
     if bet > current_balance:
         await send_reply(update, context, f"❌ Insufficient balance. Your current balance is: *${current_balance:,.2f}*")
         return
 
     # Deduct the bet from the user's balance
     new_balance = current_balance - bet
-    update_user_balance(user_id, new_balance)  # Update the balance in the database
+    update_user_balance(user_id, new_balance)  # Update balance in the database
 
-    # Get user's current stats from the database
+    # Update total bet stats
     total_bet, total_winnings = get_user_stats(user_id)
-
-    # Update the total bet in the stats
     total_bet += bet
     update_user_stats(user_id, total_bet, total_winnings)
 
-    # Store the bet and initialize the game state
-    games[user_id] = {
-        'bet': bet,  # Store the current bet
-        'level': 0,
-        'mode': None,
-        'correct_buttons': [],
-        'status': 'placing_bet',
-        'last_bet': bet  # Store the bet for future reference (used for Try Again)
-    }
+    # Initialize the game state for the bet
+    games[user_id]['bet'] = bet
+    games[user_id]['level'] = 0
+    games[user_id]['mode'] = None
+    games[user_id]['correct_buttons'] = []
+    games[user_id]['status'] = 'placing_bet'
+    games[user_id]['last_bet'] = bet  # Update last bet for future references
 
     # Display difficulty selection buttons
     keyboard = [
