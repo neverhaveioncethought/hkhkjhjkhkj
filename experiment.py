@@ -6,17 +6,13 @@ from telegram.error import Forbidden
 
 MULTIPLIERS_EASY = [1.2, 1.52, 2.07, 2.5, 3.0]
 MULTIPLIERS_HARD = [1.2, 1.52, 2.07, 2.5, 3.5, 4.0, 5.0]
-
 ALLOWED_USER_IDS = [6752577843]
-
 OWNER_USER_ID = 6752577843
-
 INITIAL_BALANCE = 5000.0  
+DATABASE = 'bot_data.db'
 
 games = {}
 user_preferences = {}
-
-DATABASE = 'bot_data.db'
 
 # Helper function to initialize the SQLite database
 def init_db():
