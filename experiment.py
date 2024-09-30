@@ -45,64 +45,49 @@ def init_db():
     conn.close()
 
 # Helper function to get a user's balance from the database
+def ensure_user_initialized(user_id):
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT balance FROM user_balances WHERE user_id = ?", (user_id,))
+    if cursor.fetchone() is None:
+        cursor.execute("INSERT INTO user_balances (user_id, balance) VALUES (?, ?)", (user_id, INITIAL_BALANCE))
+        cursor.execute("INSERT INTO user_stats (user_id, total_bet, total_winnings) VALUES (?, 0, 0)")
+        conn.commit()
+    conn.close()
+
 def get_user_balance(user_id):
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-
-    cursor.execute('SELECT balance FROM user_balances WHERE user_id = ?', (user_id,))
-    result = cursor.fetchone()
-
-    if result:
-        balance = result[0]
-    else:
-        balance = INITIAL_BALANCE
-        cursor.execute('INSERT INTO user_balances (user_id, balance) VALUES (?, ?)', (user_id, balance))
-
-    conn.commit()
+    cursor.execute("SELECT balance FROM user_balances WHERE user_id = ?", (user_id,))
+    balance = cursor.fetchone()[0]
     conn.close()
     return balance
 
-# Helper function to update a user's balance in the database
-def update_user_balance(user_id, balance):
+def update_user_balance(user_id, new_balance):
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-    cursor.execute('UPDATE user_balances SET balance = ? WHERE user_id = ?', (balance, user_id))
+    cursor.execute("UPDATE user_balances SET balance = ? WHERE user_id = ?", (new_balance, user_id))
     conn.commit()
     conn.close()
 
-# Helper function to get a user's stats from the database
 def get_user_stats(user_id):
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-
-    cursor.execute('SELECT total_bet, total_winnings FROM user_stats WHERE user_id = ?', (user_id,))
-    result = cursor.fetchone()
-
-    if result:
-        total_bet, total_winnings = result
-    else:
-        total_bet = 0.0
-        total_winnings = 0.0
-        cursor.execute('INSERT INTO user_stats (user_id, total_bet, total_winnings) VALUES (?, ?, ?)',
-                       (user_id, total_bet, total_winnings))
-
-    conn.commit()
+    cursor.execute("SELECT total_bet, total_winnings FROM user_stats WHERE user_id = ?", (user_id,))
+    stats = cursor.fetchone()
     conn.close()
-    return total_bet, total_winnings
+    return stats
 
-# Helper function to update a user's stats in the database
-def update_user_stats(user_id, total_bet, total_winnings):
+def update_user_stats(user_id, total_bet_increase, winnings_increase):
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-    cursor.execute('UPDATE user_stats SET total_bet = ?, total_winnings = ? WHERE user_id = ?',
-                   (total_bet, total_winnings, user_id))
+    cursor.execute("UPDATE user_stats SET total_bet = total_bet + ?, total_winnings = total_winnings + ? WHERE user_id = ?",
+                   (total_bet_increase, winnings_increase, user_id))
     conn.commit()
     conn.close()
-
 
 # Helper function to get chat_id based on user preference
 def get_chat_id(update: Update, user_id):
-    """Return the correct chat_id (either group chat or DM) based on user preference."""
     if user_preferences.get(user_id) == "dm":
         return user_id  # Send to DM
     elif update.message:
@@ -110,45 +95,9 @@ def get_chat_id(update: Update, user_id):
     elif update.callback_query:
         return update.callback_query.message.chat_id  # Callback in group chat
 
-conn = sqlite3.connect("tower_game.db", check_same_thread=False)
-cursor = conn.cursor()
-
-# Create the necessary tables if they don't exist
-cursor.execute('''CREATE TABLE IF NOT EXISTS user_balances (user_id INTEGER PRIMARY KEY, balance REAL)''')
-cursor.execute('''CREATE TABLE IF NOT EXISTS user_stats (user_id INTEGER PRIMARY KEY, total_bet REAL, total_winnings REAL)''')
-conn.commit()
-
-
-def ensure_user_initialized(user_id):
-    cursor.execute("SELECT balance FROM user_balances WHERE user_id = ?", (user_id,))
-    balance = cursor.fetchone()
-    if not balance:
-        cursor.execute("INSERT INTO user_balances (user_id, balance) VALUES (?, ?)", (user_id, INITIAL_BALANCE))
-        cursor.execute("INSERT INTO user_stats (user_id, total_bet, total_winnings) VALUES (?, 0, 0)")
-        conn.commit()
-
-# Helper function to get user balance from the database
-def get_user_balance(user_id):
-    cursor.execute('SELECT balance FROM user_balances WHERE user_id = ?', (user_id,))
-    return cursor.fetchone()[0]
-
-# Helper function to update user balance in the database
-def update_user_balance(user_id, new_balance):
-    cursor.execute('UPDATE user_balances SET balance = ? WHERE user_id = ?', (new_balance, user_id))
-    conn.commit()
-
-# Helper function to update user stats
-def update_user_stats(user_id, total_bet_increase, winnings_increase):
-    cursor.execute('UPDATE user_stats SET total_bet = total_bet + ?, total_winnings = total_winnings + ? WHERE user_id = ?',
-                   (total_bet_increase, winnings_increase, user_id))
-    conn.commit()
-
-
-# /start command to show game options
+# Start command to show game options
 async def start(update: Update, context):
-    """Show game options (Play Game, Show Stats, Check Balance)."""
-    user = update.message.from_user if update.message else update.callback_query.from_user
-    user_id = user.id
+    user_id = update.message.from_user.id
     ensure_user_initialized(user_id)
 
     intro_message = (
@@ -174,146 +123,97 @@ async def start(update: Update, context):
 
 # Handle button actions from /start command
 async def handle_start_options(update: Update, context):
-    """Handle the button options for playing a game, showing stats, or checking balance."""
     query = update.callback_query
     user_id = query.from_user.id
     ensure_user_initialized(user_id)
-
     data = query.data
 
     if data == "show_stats":
-        await user_stats_command(update, context)  # Call the stats command
+        await user_stats_command(update, context)
     elif data == "start_game":
-        # After clicking "Play Game", ask if they want to play in DM or group chat
         await ask_play_location(update, context)
     elif data == "check_balance":
-        await check_balance(update, context)  # Call the function to check balance
-
-    await query.answer()  # Acknowledge the query to stop loading
-
+        await check_balance(update, context)
+    await query.answer()
 
 # Ask user whether they want to play in DM or group chat after clicking "Play Game"
 async def ask_play_location(update: Update, context):
-    """Ask the user where they want to play (DM or group chat)."""
     query = update.callback_query
-    user_id = query.from_user.id
+    user = query.from_user
+    user_id = user.id
     ensure_user_initialized(user_id)
 
-    user = query.from_user
-
-    if user.username:
-        player_name = f"@{user.username}"
-    else:
-        player_name = user.full_name or user.first_name
-
-    # Ask user whether they want to play in DMs or group chat
+    player_name = f"@{user.username}" if user.username else user.full_name
     keyboard = [
         [InlineKeyboardButton("Play in DM", callback_data="play_dm"),
-        InlineKeyboardButton("Play here", callback_data="play_group_chat")]
+         InlineKeyboardButton("Play in Group chat", callback_data="play_group_chat")]
     ]
     
-    await send_reply(
-        update, context,
-        text=f"{player_name}, Do you want to play in DMs or in the group chat?",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    await send_reply(update, context, text=f"{player_name}, Do you want to play in DMs or in the group chat?",
+                     reply_markup=InlineKeyboardMarkup(keyboard))
 
-
-
-
-
-# Handle the user's choice of DM or Group Chat
 async def handle_play_location_choice(update: Update, context):
-    """Handle the user's choice of where to play the game (DM or group chat)."""
     query = update.callback_query
     user_id = query.from_user.id
-    ensure_user_initialized(user_id)
-
     data = query.data
+    ensure_user_initialized(user_id)
 
     if data == "play_dm":
         user_preferences[user_id] = "dm"
         await query.answer("You chose to play in DM.")
-        await tower(update, context)  # Start the game in DM
+        await tower(update, context)
     elif data == "play_group_chat":
         user_preferences[user_id] = "group"
         await query.answer("You chose to play in the group chat.")
-        await tower(update, context)  # Start the game in group chat
+        await tower(update, context)
 
     await query.answer()
 
+
 # Helper function to reply to the user's message
 async def send_reply(update, context, text, reply_markup=None):
-    """Send a reply to the correct chat (group chat or DM)."""
     try:
         if update.message:
             chat_id = update.message.chat_id
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=text,
-                reply_markup=reply_markup,
-                parse_mode="Markdown"
-            )
+            await context.bot.send_message(chat_id=chat_id, text=text, reply_to_message_id=update.message.message_id,
+                                           reply_markup=reply_markup, parse_mode="Markdown")
         elif update.callback_query:
             chat_id = update.callback_query.message.chat_id
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=text,
-                reply_markup=reply_markup,
-                parse_mode="Markdown"
-            )
-    except Forbidden:
-        print(f"Cannot send message to user {update.message.from_user.id}. They may have blocked the bot.")
+            await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup, parse_mode="Markdown")
+    except Exception as e:
+        print(f"Error sending message: {e}")
 
 
 
 # /tower command to start the game and offer bet options
 async def tower(update: Update, context):
-    """Start the Tower game and prompt for bet amount."""
     user = update.message.from_user if update.message else update.callback_query.from_user
     user_id = user.id
     ensure_user_initialized(user_id)
 
-
-    # Get user balance from the database
     current_balance = get_user_balance(user_id)
     quarter_balance = current_balance / 4
     half_balance = current_balance / 2
 
-    # Store initial game state in memory if it doesn't exist
-    if user_id not in games:
-        games[user_id] = {'bet': 0, 'level': 0, 'mode': None, 'correct_buttons': [], 'status': 'placing_bet'}
-
-    # Display buttons for betting options: 1/4, 1/2, or custom bet
+    player_name = f"@{user.username}" if user.username else user.full_name
     keyboard = [
         [InlineKeyboardButton(f"Bet 1/4 (${quarter_balance:,.2f})", callback_data=f"bet_quarter_{user_id}"),
          InlineKeyboardButton(f"Bet 1/2 (${half_balance:,.2f})", callback_data=f"bet_half_{user_id}")],
         [InlineKeyboardButton("Enter Custom Bet", callback_data=f"bet_custom_{user_id}")]
     ]
 
-    await send_reply(
-        update,
-        context,
-        text=f"👤 Player: {user.first_name}\n💸 Current balance: *${current_balance:,.2f}*\nChoose your bet amount:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
+    await send_reply(update, context, text=f"👤 Player: {player_name}\n💸 Current balance: *${current_balance:,.2f}*\nChoose your bet amount:",
+                     reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 # /check_balance command to check user's balance
 async def check_balance(update: Update, context):
-    """Check and display the user's current balance."""
     user = update.message.from_user if update.message else update.callback_query.from_user
     user_id = user.id
     ensure_user_initialized(user_id)
 
-
     balance = get_user_balance(user_id)
-    await send_reply(
-        update,
-        context,
-        f"👤 Player: {user.first_name}\n\n💸 Your current balance: *${balance:,.2f}*"
-    )
+    await send_reply(update, context, text=f"👤 Player: {user.first_name}\n\n💸 Your current balance: *${balance:,.2f}*")
 
 
 # /stats command to show user's stats
@@ -322,82 +222,52 @@ async def user_stats_command(update: Update, context):
     user_id = user.id
     ensure_user_initialized(user_id)
 
-    cursor.execute('SELECT total_bet, total_winnings FROM user_stats WHERE user_id = ?', (user_id,))
-    total_bet, total_winnings = cursor.fetchone()
-
+    total_bet, total_winnings = get_user_stats(user_id)
     balance = get_user_balance(user_id)
     net_gain = total_winnings - total_bet
 
-    await send_reply(
-        update,
-        context,
-        f"👤 Player: {user.first_name}\n\n"
-        f"📊 *Your Stats* 📊\n"
-        f"💸 Current Balance: *${balance:,.2f}*\n"
-        f"💰 Total Bet: *${total_bet:,.2f}*\n"
-        f"🎉 Total Won: *${total_winnings:,.2f}*\n"
-        f"📈 Net Gain/Loss: *{'+' if net_gain >= 0 else '-'}${abs(net_gain):,.2f}*"
-    )
+    await send_reply(update, context, f"👤 Player: {user.first_name}\n\n"
+                                      f"📊 *Your Stats* 📊\n"
+                                      f"💸 Current Balance: *${balance:,.2f}*\n"
+                                      f"💰 Total Bet: *${total_bet:,.2f}*\n"
+                                      f"🎉 Total Won: *${total_winnings:,.2f}*\n"
+                                      f"📈 Net Gain/Loss: *{'+' if net_gain >= 0 else '-'}${abs(net_gain):,.2f}*")
 
 
 # Handle Cashout action
 async def handle_cashout(update: Update, context):
-    """Handle the cashout button press and end the game."""
     query = update.callback_query
     user_id = query.from_user.id
-    ensure_user_initialized(user_id)
     user = query.from_user
-    data = query.data.split('_')
-
-    # Ensure that the callback data and user ID match
-    if int(data[1]) != user_id:
-        await query.answer("You cannot interact with this game.", show_alert=True)
-        return
-
     game = games.get(user_id)
+
     if not game or game['status'] != 'playing':
         await query.answer("The game has already ended.")
         return
 
-    # Get player's name (username or full name)
+    level = game['level']
+    bet = game['bet']
+
     if user.username:
         player_name = f"@{user.username}"
     else:
         player_name = user.full_name or user.first_name
 
-    # Calculate the total winnings (this includes the original bet + winnings)
-    if game['level'] == 0:
-        winnings = game['bet']
+    if level == 0:
+        net_winnings = 0
     else:
-        winnings = game['bet'] * game['multipliers'][game['level'] - 1]
+        total_winnings = bet * game['multipliers'][level - 1]
+        net_winnings = total_winnings - bet
 
-    # Calculate the net winnings (this is what the player actually won, excluding the original bet)
-    net_winnings = winnings - game['bet']
+    update_user_stats(user_id, 0, net_winnings)
 
-    # Get user's current stats from the database
-    total_bet, total_winnings = get_user_stats(user_id)
-
-    # Update user's total winnings in stats
-    total_winnings += net_winnings
-    update_user_stats(user_id, total_bet, total_winnings)
-
-    # Add the net winnings to the user's balance
-    current_balance = get_user_balance(user_id)
-    new_balance = current_balance + net_winnings
+    new_balance = get_user_balance(user_id) + net_winnings
     update_user_balance(user_id, new_balance)
 
-    # Send a message to the user confirming their cashout and showing only the net winnings
-    await send_reply(
-        update,
-        context,
-        text=f"👤 Player: {player_name}\n\n💰 You've cashed out!\n📈 Net gain: *${net_winnings:,.2f}*!\n💸 Your new balance is *${new_balance:,.2f}*"
-    )
-
-    # Mark the game as cashed out and disable further interactions
+    await send_reply(update, context, text=f"👤 Player: {player_name}\n\n🎉 You've cashed out!\n📈 Net gain: *${net_winnings:,.2f}*\n💸 Your new balance is *${new_balance:,.2f}*")
     game['status'] = 'cashed_out'
     game['level_buttons'] = disable_all_buttons(game['level_buttons'])
 
-    # Disable all buttons after cashout
     await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(game['level_buttons']))
 
 
@@ -443,186 +313,60 @@ async def add_balance(update: Update, context):
     except ValueError:
         await send_reply(update, context, "Invalid input. Please provide numeric values.")
 
-# Handle Cashout action
-async def handle_cashout(update: Update, context):
-    """Handle the cashout button press and end the game."""
+
+
+
+
+# Handle bet options (1/4, 1/2 of the current balance or last bet, or custom)
+async def handle_bet_option(update: Update, context):
+    query = update.callback_query
+    user_id = query.from_user.id
+    data = query.data.split('_')
+    current_balance = get_user_balance(user_id)
+
+    if data[1] == 'quarter':
+        bet = current_balance / 4
+    elif data[1] == 'half':
+        bet = current_balance / 2
+    elif data[1] == 'custom':
+        games[user_id]['status'] = 'awaiting_custom_bet'
+        await send_reply(update, context, "Please enter your custom bet amount:")
+        return
+
+    if bet > current_balance:
+        await send_reply(update, context, f"❌ Insufficient balance.\nYour current balance: *${current_balance:,.2f}*")
+    else:
+        await process_bet(update, context, bet, user_id)
+
+
+
+# Cancel the bet and reset the game
+async def cancel_bet(update: Update, context):
     query = update.callback_query
     user_id = query.from_user.id
     user = query.from_user
-    data = query.data.split('_')
+    ensure_user_initialized(user_id)
 
-    # Ensure that the callback data and user ID match
-    if int(data[1]) != user_id:
-        await query.answer("You cannot interact with this game.", show_alert=True)
-        return
-
-    game = games.get(user_id)
-    if not game or game['status'] != 'playing':
-        await query.answer("The game has already ended.")
-        return
 
     if user.username:
         player_name = f"@{user.username}"
     else:
         player_name = user.full_name or user.first_name
 
-    # Calculate the total winnings (this includes the original bet + winnings)
-    if game['level'] == 0:
-        winnings = game['bet']
-    else:
-        winnings = game['bet'] * game['multipliers'][game['level'] - 1]
-
-    # Calculate the net winnings (this is what the player actually won, excluding the original bet)
-    net_winnings = winnings - game['bet']
-
-    # Update user's total winnings in stats
-    user_stats[user_id]["total_winnings"] += net_winnings
-
-    # Add only the net winnings to the user's balance
-    user_balances[user_id] += net_winnings
-
-    # Create the button to ask the user if they want to play again
-    keyboard = [
-        [InlineKeyboardButton("🎮 Play Again", callback_data=f"play_again_{user_id}")]
-    ]
-
-    # Send a message to the user confirming their cashout and asking if they want to play again
-    await send_reply(
-        update,
-        context,
-        text=f"👤 Player: {player_name}\n\n💰 You've cashed out!\n📈 Net gain: *${net_winnings:,.2f}*!\n💸 Your new balance is *${user_balances[user_id]:,.2f}*",
-        reply_markup=InlineKeyboardMarkup(keyboard)  # Add the "Play Again" button
-    )
-
-    # Mark the game as cashed out and disable further interactions
-    game['status'] = 'cashed_out'
-    game['level_buttons'] = disable_all_buttons(game['level_buttons'])
-
-    # Disable all buttons after cashout
-    await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(game['level_buttons']))
-
-# Handle bet options (1/4, 1/2 of the current balance or last bet, or custom)
-async def handle_bet_option(update: Update, context):
-    """Handle predefined bet options or custom bet."""
-    query = update.callback_query
-    user = query.from_user
-    user_id = user.id
-    ensure_user_initialized(user_id)
-    data = query.data.split('_')
-
-    # Get the user's current balance from the database
-    current_balance = get_user_balance(user_id)
-
-    # Determine the bet amount based on the button clicked
-    if data[1] == 'quarter':
-        bet = current_balance / 4  # Bet exactly 1/4 of the current balance
-    elif data[1] == 'half':
-        bet = current_balance / 2  # Bet exactly 1/2 of the current balance
-    elif data[1] == 'custom':
-        # Set the game status to awaiting custom bet
-        games[user_id]['status'] = 'awaiting_custom_bet'
-        await send_reply(
-            update,
-            context,
-            text="Please enter your custom bet amount:",
-            reply_markup=None  # Remove any buttons while waiting for input
-        )
-        return
-
-    # Ensure the bet is correctly validated against the current balance
-    if bet > current_balance:
-        await send_reply(
-            update,
-            context,
-            f"❌ Insufficient balance.\nYour current balance: *${current_balance:,.2f}*"
-        )
-        return
-    else:
-        # If balance is sufficient, process the bet
-        await process_bet(update, context, bet, user_id)
-
-async def handle_bet_option(update: Update, context):
-    """Handle predefined bet options or custom bet."""
-    query = update.callback_query
-    user_id = query.from_user.id
-    data = query.data.split('_')
-
-    # Ensure the user's balance is initialized
-    ensure_user_initialized(user_id)
-
-    # Get the user's current balance
-    current_balance = user_balances[user_id]
-
-    # Determine the bet amount based on the button clicked
-    bet = None
-    if data[1] == 'quarter':
-        bet = current_balance / 4  # Bet exactly 1/4 of the current balance
-    elif data[1] == 'half':
-        bet = current_balance / 2  # Bet exactly 1/2 of the current balance
-    elif data[1] == 'double':
-        last_bet = games[user_id].get('last_bet', current_balance)  # Default to full balance if no last bet
-        bet = last_bet * 2  # Bet exactly 2x the last bet
-    elif data[1] == 'custom':
-        games[user_id]['status'] = 'awaiting_custom_bet'
-        await send_reply(
-            update,
-            context,
-            text="Please enter your custom bet amount:",
-            reply_markup=None  # Remove any buttons while waiting for input
-        )
-        return
-
-    # Ensure the bet is properly validated
-    if bet is not None and bet > current_balance:
-        await send_reply(
-            update,
-            context,
-            f"❌ Insufficient balance.\nYour current balance: *${current_balance:,.2f}*"
-        )
-        return
-
-    # If balance is sufficient, process the bet
-    await process_bet(update, context, bet, user_id)
-
-def ensure_user_initialized(user_id):
-    """Ensure the user's balance and stats are initialized."""
-    if user_id not in user_balances:
-        user_balances[user_id] = INITIAL_BALANCE
-        user_stats[user_id] = {"total_bet": 0.0, "total_winnings": 0.0}
-
-
-
-async def cancel_bet(update: Update, context):
-    query = update.callback_query
-    user_id = query.from_user.id
-    data = query.data.split('_')
-    ensure_user_initialized(user_id)
-
-    if int(data[1]) != user_id:
-        await query.answer("You cannot interact with this game.", show_alert=True)
-        return
-
     game = games.get(user_id)
-
     if game and game['status'] == 'placing_bet':
         bet = game['bet']
         current_balance = get_user_balance(user_id)
-        new_balance = current_balance + bet  # Return bet to user
+        new_balance = current_balance + bet
         update_user_balance(user_id, new_balance)
 
-        games.pop(user_id)  # Reset game for the user
-
-        await send_reply(
-            update, context,
-            text=f"❌ BET CANCELED ❌\nYour balance remains *${new_balance:,.2f}*"
-        )
+        games.pop(user_id)
+        await send_reply(update, context, f"👤 Player: {player_name}\n\n❌BET CANCELED❌\nYour balance remains *${new_balance:,.2f}*")
     else:
         await query.answer("No active bet to cancel.", show_alert=True)
 
 
-
-
-# Handle 'Try Again' button press and restart the game for the user
+# Handle the 'Try Again' button press and restart the game for the user
 async def handle_try_again(update: Update, context):
     """Handle the 'Try Again' button press and restart the game for the user."""
     query = update.callback_query
@@ -667,59 +411,40 @@ async def handle_try_again(update: Update, context):
     await send_reply(
         update,
         context,
-        text=(f"👤 Player: {player_name}\n\n💸 Your last bet was *${last_bet:,.2f}*.\n"
-              f"Choose your next bet amount or enter a custom bet."),
+        text=(
+            f"👤 Player: {player_name}\n\n💸 Your last bet was *${last_bet:,.2f}*.\n"
+            f"Choose your next bet amount or enter a custom bet."
+        ),
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
 
+
 # Process bet logic and display difficulty options
 async def process_bet(update: Update, context, bet, user_id):
-    """Process the bet, check balance, and ask for difficulty selection."""
-    user = update.message.from_user if update.message else update.callback_query.from_user
-
-    # Get the user's current balance from the database
     current_balance = get_user_balance(user_id)
 
     if bet > current_balance:
         await send_reply(update, context, f"❌ Insufficient balance. Your current balance is: *${current_balance:,.2f}*")
         return
 
-    # Deduct the bet from the user's balance
     new_balance = current_balance - bet
-    update_user_balance(user_id, new_balance)  # Update the balance in the database
-
-    # Get user's current stats from the database
+    update_user_balance(user_id, new_balance)
     total_bet, total_winnings = get_user_stats(user_id)
-
-    # Update the total bet in the stats
     total_bet += bet
     update_user_stats(user_id, total_bet, total_winnings)
 
-    # Store the bet and initialize the game state
-    games[user_id] = {
-        'bet': bet,  # Store the current bet
-        'level': 0,
-        'mode': None,
-        'correct_buttons': [],
-        'status': 'placing_bet',
-        'last_bet': bet  # Store the bet for future reference (used for Try Again)
-    }
+    games[user_id] = {'bet': bet, 'level': 0, 'mode': None, 'correct_buttons': [], 'status': 'placing_bet', 'last_bet': bet}
 
-    # Display difficulty selection buttons
     keyboard = [
         [InlineKeyboardButton("Easy (5 levels)", callback_data=f'easy_{user_id}'),
          InlineKeyboardButton("Hard (8 levels)", callback_data=f'hard_{user_id}')],
         [InlineKeyboardButton("Cancel Bet", callback_data=f'cancel_{user_id}')]
     ]
 
-    await send_reply(
-        update,
-        context,
-        f"👤 Player: {user.first_name}\n\n💸 You bet: ${bet:,.2f}\n🔐 Choose difficulty level or cancel:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    await send_reply(update, context, f"👤 Player: {update.message.from_user.first_name}\n\n💸 You bet: ${bet:,.2f}\n🔐 Choose difficulty level or cancel:",
+                     reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 # 👤 Player: {player_name}\n\n
@@ -730,64 +455,35 @@ async def process_bet(update: Update, context, bet, user_id):
 
 
 # Set difficulty and start the game
-# Set difficulty and start the game
 async def set_difficulty(update: Update, context):
-    """Set difficulty and start the game."""
     query = update.callback_query
+    user_id = query.from_user.id
     user = query.from_user
-    user_id = user.id
-    ensure_user_initialized(user_id)
     data = query.data.split('_')
+    ensure_user_initialized(user_id)
 
-    if int(data[1]) != user_id:
-        await query.answer("You cannot interact with this game.", show_alert=True)
-        return
-
-    # Check if the bet exists in the game session
-    if 'bet' not in games[user_id]:
-        await query.answer("No active bet found. Please start a new game.", show_alert=True)
-        return
-
-    # Get the player's name (username or full name)
     if user.username:
         player_name = f"@{user.username}"
     else:
         player_name = user.full_name or user.first_name
 
-    # Set the difficulty mode and initialize the game state
     mode = data[0]
-    games[user_id]['mode'] = mode
-    bet_amount = games[user_id]['bet']
+    game = games[user_id]
+    bet = game['bet']
 
     if mode == 'easy':
-        games[user_id]['multipliers'] = MULTIPLIERS_EASY
+        game['multipliers'] = MULTIPLIERS_EASY
     elif mode == 'hard':
-        games[user_id]['multipliers'] = MULTIPLIERS_HARD
-    else:
-        await query.answer("Invalid mode selected", show_alert=True)
-        return
+        game['multipliers'] = MULTIPLIERS_HARD
 
-    # Deduct the bet from the user's balance
     current_balance = get_user_balance(user_id)
-    new_balance = current_balance - bet_amount
+    new_balance = current_balance - bet
     update_user_balance(user_id, new_balance)
 
     games[user_id]['level_buttons'] = await create_level_buttons(user_id)
     games[user_id]['status'] = 'playing'
-
-    # Enable buttons for the first level
-    games[user_id]['level_buttons'] = enable_buttons_for_level(games[user_id]['level_buttons'], 0, user_id)
-
-    # Display the bet amount and start the game
-    await query.edit_message_text(
-        f"👤 Player: {player_name}\n\n🏢 Towers mode: {mode.capitalize()}\n💸 Bet amount: *${bet_amount:,.2f}*\n🎉 Let's start the game!",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(games[user_id]['level_buttons'])
-    )
-
-
-
-
+    await query.edit_message_text(f"👤 Player: {player_name}\n\n🏢 Towers mode: {mode.capitalize()}\n💸 Bet amount: *${bet:,.2f}*\n🎉 Good luck!",
+                                  reply_markup=InlineKeyboardMarkup(games[user_id]['level_buttons']))
 
 
 # Create level buttons with bet * multiplier values
@@ -818,7 +514,6 @@ async def handle_choice(update: Update, context):
     query = update.callback_query
     user_id = query.from_user.id
     data = query.data.split('_')
-    ensure_user_initialized(user_id)
     user = query.from_user
 
     # Handle 'choice' separately
@@ -924,6 +619,8 @@ def enable_buttons_for_level(buttons, level, user_id):
                 buttons[i][j] = InlineKeyboardButton(button.text, callback_data=button.callback_data)
     return buttons
 
+
+
 # Receive and process the custom bet amount
 async def receive_bet(update: Update, context):
     """Receive the custom bet amount if selected."""
@@ -962,28 +659,6 @@ async def receive_bet(update: Update, context):
         # Only send the error message if the bot is in the custom betting phase
         await send_reply(update, context, "Please enter a valid number.")
 
-
-
-# Handle the "Play Again" button press
-async def handle_play_again(update: Update, context):
-    """Handle the 'Play Again' button press and restart the game for the user."""
-    query = update.callback_query
-    user_id = query.from_user.id
-    user = query.from_user
-
-    # Reset the game state for this user (if you want a fresh start)
-    games[user_id] = {
-        'bet': 0,  # Initialize bet to 0
-        'level': 0,
-        'mode': None,
-        'correct_buttons': [],
-        'status': 'placing_bet'
-    }
-
-    # Bring the user to the betting prompt again
-    await tower(update, context)
-
-    await query.answer()  # Acknowledge the button press
 
 
 # Command to reset all user balances (restricted to allowed admins)
@@ -1073,9 +748,6 @@ def main():
     app.add_handler(CallbackQueryHandler(cancel_bet, pattern='^cancel_'))
     app.add_handler(CallbackQueryHandler(handle_choice, pattern='^choice_'))
     app.add_handler(CallbackQueryHandler(handle_cashout, pattern='^cashout_'))
-    # Add the handler to handle the 'Play Again' button press
-    app.add_handler(CallbackQueryHandler(handle_play_again, pattern='^play_again_'))
-
 
     app.add_handler(CallbackQueryHandler(handle_try_again, pattern='^try_again_'))
 
