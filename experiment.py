@@ -51,6 +51,18 @@ def ensure_game_initialized(user_id):
             'last_bet': 0  # Initialize with 0 for first-time players
         }
 
+# Ensure user and their data (balance and stats) are initialized
+def ensure_user_initialized(user_id):
+    """Ensure user balance and stats are initialized in the database."""
+    cursor.execute("SELECT balance FROM user_balances WHERE user_id = ?", (user_id,))
+    balance = cursor.fetchone()
+    
+    if not balance:
+        # Initialize balance and stats for new users
+        cursor.execute("INSERT INTO user_balances (user_id, balance) VALUES (?, ?)", (user_id, INITIAL_BALANCE))
+        cursor.execute("INSERT INTO user_stats (user_id, total_bet, total_winnings) VALUES (?, 0, 0)")
+        conn.commit()
+
 def get_user_balance(user_id):
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
