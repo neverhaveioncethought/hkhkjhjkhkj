@@ -339,13 +339,16 @@ async def handle_bet_option(update: Update, context):
     # Get the user's current balance from the database
     current_balance = get_user_balance(user_id)
 
+    # Initialize bet variable with a default value
+    bet = None
+
     # Determine the bet amount based on the button clicked
     if data[1] == 'quarter':
-        bet = float(data[2])  # Directly use the bet from the button value
+        bet = current_balance / 4  # Bet exactly 1/4 of the current balance
     elif data[1] == 'half':
-        bet = float(data[2])  # Directly use the bet from the button value
+        bet = current_balance / 2  # Bet exactly 1/2 of the current balance
     elif data[1] == 'custom':
-        # Set the game status to awaiting custom bet, no balance check here
+        # Set the game status to awaiting custom bet
         games[user_id]['status'] = 'awaiting_custom_bet'
         await send_reply(
             update,
@@ -355,18 +358,26 @@ async def handle_bet_option(update: Update, context):
         )
         return
 
-    # Ensure the bet is correctly validated against the current balance
-    if bet > current_balance:
+    # Check if the bet has been properly assigned a value before proceeding
+    if bet is not None:
+        # Ensure the bet is correctly validated against the current balance
+        if bet > current_balance:
+            await send_reply(
+                update,
+                context,
+                f"❌ Insufficient balance.\nYour current balance: *${current_balance:,.2f}*"
+            )
+            return
+        else:
+            # If balance is sufficient, process the bet
+            await process_bet(update, context, bet, user_id)
+    else:
+        # Log or handle cases where bet is still None (this shouldn't normally happen)
         await send_reply(
             update,
             context,
-            f"❌ Insufficient balance.\nYour current balance: *${current_balance:,.2f}*"
+            "An error occurred processing your bet. Please try again."
         )
-        return
-
-    # If balance is sufficient, process the bet
-    await process_bet(update, context, bet, user_id)
-
 
 
 # Cancel the bet and reset the game
