@@ -417,28 +417,60 @@ async def handle_try_again(update: Update, context):
 
 # Process bet logic and display difficulty options
 async def process_bet(update: Update, context, bet, user_id):
+    """Process the bet, check balance, and ask for difficulty selection."""
+    
+    # Check if the update is from a message or a callback query
+    if update.message:
+        user = update.message.from_user
+        player_name = user.first_name
+    elif update.callback_query:
+        user = update.callback_query.from_user
+        player_name = user.first_name
+    else:
+        return  # Safeguard: If there's no message or callback_query, exit early
+
+    # Get the user's current balance from the database
     current_balance = get_user_balance(user_id)
 
     if bet > current_balance:
         await send_reply(update, context, f"❌ Insufficient balance. Your current balance is: *${current_balance:,.2f}*")
         return
 
+    # Deduct the bet from the user's balance
     new_balance = current_balance - bet
-    update_user_balance(user_id, new_balance)
+    update_user_balance(user_id, new_balance)  # Update the balance in the database
+
+    # Get user's current stats from the database
     total_bet, total_winnings = get_user_stats(user_id)
+
+    # Update the total bet in the stats
     total_bet += bet
     update_user_stats(user_id, total_bet, total_winnings)
 
-    games[user_id] = {'bet': bet, 'level': 0, 'mode': None, 'correct_buttons': [], 'status': 'placing_bet', 'last_bet': bet}
+    # Store the bet and initialize the game state
+    games[user_id] = {
+        'bet': bet,  # Store the current bet
+        'level': 0,
+        'mode': None,
+        'correct_buttons': [],
+        'status': 'placing_bet',
+        'last_bet': bet  # Store the bet for future reference (used for Try Again)
+    }
 
+    # Display difficulty selection buttons
     keyboard = [
         [InlineKeyboardButton("Easy (5 levels)", callback_data=f'easy_{user_id}'),
          InlineKeyboardButton("Hard (8 levels)", callback_data=f'hard_{user_id}')],
         [InlineKeyboardButton("Cancel Bet", callback_data=f'cancel_{user_id}')]
     ]
 
-    await send_reply(update, context, f"👤 Player: {update.message.from_user.first_name}\n\n💸 You bet: ${bet:,.2f}\n🔐 Choose difficulty level or cancel:",
-                     reply_markup=InlineKeyboardMarkup(keyboard))
+    await send_reply(
+        update,
+        context,
+        f"👤 Player: {player_name}\n\n💸 You bet: ${bet:,.2f}\n🔐 Choose difficulty level or cancel:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
 
 
 # 👤 Player: {player_name}\n\n
