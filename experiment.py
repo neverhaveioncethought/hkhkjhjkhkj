@@ -362,13 +362,23 @@ async def add_balance(update: Update, context):
 
 
 # Handle bet options (1/4, 1/2 of the current balance or last bet, or custom)
-# Handle bet options (1/4, 1/2 of the current balance or last bet, or custom)
 async def handle_bet_option(update: Update, context):
     """Handle predefined bet options or custom bet."""
     query = update.callback_query
     user = query.from_user
     user_id = user.id
     data = query.data.split('_')
+
+    # Ensure the game is initialized for the user
+    if user_id not in games:
+        games[user_id] = {
+            'bet': 0,
+            'level': 0,
+            'mode': None,
+            'correct_buttons': [],
+            'status': 'placing_bet',
+            'last_bet': 0  # Initialize last_bet
+        }
 
     # Get the user's current balance from the database
     current_balance = get_user_balance(user_id)
@@ -398,6 +408,7 @@ async def handle_bet_option(update: Update, context):
 
     # Process the bet
     await process_bet(update, context, bet, user_id)
+
 
 
 
@@ -440,7 +451,16 @@ async def handle_try_again(update: Update, context):
         await query.answer("You cannot interact with this game.", show_alert=True)
         return
 
-    # Retrieve the last bet amount
+    if user_id not in games:
+        games[user_id] = {
+            'bet': 0,
+            'level': 0,
+            'mode': None,
+            'correct_buttons': [],
+            'status': 'placing_bet',
+            'last_bet': 0
+        }
+
     last_bet = games[user_id].get('last_bet', 0)
 
     if last_bet == 0:
