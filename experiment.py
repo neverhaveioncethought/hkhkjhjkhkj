@@ -189,15 +189,23 @@ async def tower(update: Update, context):
     quarter_balance = current_balance / 4
     half_balance = current_balance / 2
 
-    player_name = f"@{user.username}" if user.username else user.full_name
+    if user.username:
+        player_name = f"@{user.username}"
+    else:
+        player_name = user.full_name or user.first_name
+
     keyboard = [
-        [InlineKeyboardButton(f"Bet 1/4 (${quarter_balance:,.2f})", callback_data=f"bet_quarter_{user_id}"),
-         InlineKeyboardButton(f"Bet 1/2 (${half_balance:,.2f})", callback_data=f"bet_half_{user_id}")],
+        [InlineKeyboardButton(f"Bet 1/4 (${quarter_balance:,.2f})", callback_data=f"bet_quarter_{quarter_balance}"),
+         InlineKeyboardButton(f"Bet 1/2 (${half_balance:,.2f})", callback_data=f"bet_half_{half_balance}")],
         [InlineKeyboardButton("Enter Custom Bet", callback_data=f"bet_custom_{user_id}")]
     ]
 
-    await send_reply(update, context, text=f"👤 Player: {player_name}\n💸 Current balance: *${current_balance:,.2f}*\nChoose your bet amount:",
-                     reply_markup=InlineKeyboardMarkup(keyboard))
+    await send_reply(
+        update,
+        context,
+        text=f"👤 Player: {player_name}\n💸 Current balance: *${current_balance:,.2f}*\nChoose your bet amount:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 
 # /check_balance command to check user's balance
@@ -314,23 +322,26 @@ async def add_balance(update: Update, context):
 # Handle bet options (1/4, 1/2 of the current balance or last bet, or custom)
 async def handle_bet_option(update: Update, context):
     query = update.callback_query
-    user_id = query.from_user.id
-    data = query.data.split('_')
-    current_balance = get_user_balance(user_id)
+    user = query.from_user
+    user_id = user.id
+    ensure_user_initialized(user_id)
 
-    if data[1] == 'quarter':
-        bet = current_balance / 4
-    elif data[1] == 'half':
-        bet = current_balance / 2
-    elif data[1] == 'custom':
-        games[user_id]['status'] = 'awaiting_custom_bet'
-        await send_reply(update, context, "Please enter your custom bet amount:")
+    # Directly parse the bet from the callback data (no additional calculations)
+    data = query.data.split('_')
+    bet = float(data[2])
+
+    # Ensure the bet is correctly validated against the current balance
+    current_balance = get_user_balance(user_id)
+    if bet > current_balance:
+        await send_reply(
+            update,
+            context,
+            f"❌ Insufficient balance.\nYour current balance: *${current_balance:,.2f}*"
+        )
         return
 
-    if bet > current_balance:
-        await send_reply(update, context, f"❌ Insufficient balance.\nYour current balance: *${current_balance:,.2f}*")
-    else:
-        await process_bet(update, context, bet, user_id)
+    # If balance is sufficient, process the bet
+    await process_bet(update, context, bet, user_id)
 
 
 
@@ -383,12 +394,9 @@ async def handle_try_again(update: Update, context):
         )
         return
 
-    if user.username:
-        player_name = f"@{user.username}"
-    else:
-        player_name = user.full_name or user.first_name
+    player_name = user.username or user.full_name or user.first_name
 
-    # Calculate new bet options based on the last bet
+    # Correct bet options: 1/4, 1/2, and 2x of the last bet, without subtracting
     quarter_bet = last_bet / 4
     half_bet = last_bet / 2
     double_bet = last_bet * 2  # 2x Bet option
@@ -414,20 +422,10 @@ async def handle_try_again(update: Update, context):
 
 
 
-
 # Process bet logic and display difficulty options
 async def process_bet(update: Update, context, bet, user_id):
     """Process the bet, check balance, and ask for difficulty selection."""
-    
-    # Check if the update is from a message or a callback query
-    if update.message:
-        user = update.message.from_user
-        player_name = user.first_name
-    elif update.callback_query:
-        user = update.callback_query.from_user
-        player_name = user.first_name
-    else:
-        return  # Safeguard: If there's no message or callback_query, exit early
+    user = update.message.from_user if update.message else update.callback_query.from_user
 
     # Get the user's current balance from the database
     current_balance = get_user_balance(user_id)
@@ -467,10 +465,9 @@ async def process_bet(update: Update, context, bet, user_id):
     await send_reply(
         update,
         context,
-        f"👤 Player: {player_name}\n\n💸 You bet: ${bet:,.2f}\n🔐 Choose difficulty level or cancel:",
+        f"👤 Player: {user.first_name}\n\n💸 You bet: ${bet:,.2f}\n🔐 Choose difficulty level or cancel:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
-
 
 
 # 👤 Player: {player_name}\n\n
