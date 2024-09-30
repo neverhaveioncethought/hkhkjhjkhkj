@@ -895,7 +895,6 @@ def enable_buttons_for_level(buttons, level, user_id):
                 buttons[i][j] = InlineKeyboardButton(button.text, callback_data=button.callback_data)
     return buttons
 
-
 # Receive and process the custom bet amount
 async def receive_bet(update: Update, context):
     """Receive the custom bet amount if selected."""
@@ -933,6 +932,7 @@ async def receive_bet(update: Update, context):
     except ValueError:
         # Only send the error message if the bot is in the custom betting phase
         await send_reply(update, context, "Please enter a valid number.")
+
 
 
 # Handle the "Play Again" button press
