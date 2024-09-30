@@ -318,13 +318,13 @@ async def check_balance(update: Update, context):
 
 # /stats command to show user's stats
 async def user_stats_command(update: Update, context):
-    """Command to show user stats."""
     user = update.message.from_user if update.message else update.callback_query.from_user
     user_id = user.id
     ensure_user_initialized(user_id)
 
-    # Get user's current stats and balance from the database
-    total_bet, total_winnings = get_user_stats(user_id)
+    cursor.execute('SELECT total_bet, total_winnings FROM user_stats WHERE user_id = ?', (user_id,))
+    total_bet, total_winnings = cursor.fetchone()
+
     balance = get_user_balance(user_id)
     net_gain = total_winnings - total_bet
 
