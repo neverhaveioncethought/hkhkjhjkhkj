@@ -362,6 +362,7 @@ async def add_balance(update: Update, context):
 
 
 # Handle bet options (1/4, 1/2 of the current balance or last bet, or custom)
+# Handle bet options (1/4, 1/2 of the current balance or last bet, or custom)
 async def handle_bet_option(update: Update, context):
     """Handle predefined bet options or custom bet."""
     query = update.callback_query
@@ -369,51 +370,35 @@ async def handle_bet_option(update: Update, context):
     user_id = user.id
     data = query.data.split('_')
 
-    # Ensure the game state is initialized for the user
-    ensure_game_initialized(user_id)
-
-    # Get the user's current balance
+    # Get the user's current balance from the database
     current_balance = get_user_balance(user_id)
+    last_bet = games[user_id].get('last_bet', current_balance)
 
-    # Initialize bet variable
-    bet = None
-
-    if len(data) > 1:
-        if data[1] == 'quarter':
-            bet = current_balance / 4  # Bet 1/4 of current balance
-        elif data[1] == 'half':
-            bet = current_balance / 2  # Bet 1/2 of current balance
-        elif data[1] == 'double':
-            last_bet = games[user_id]['last_bet']
-            bet = last_bet * 2  # Bet 2x the last bet
-        elif data[1] == 'custom':
-            # Set the game status to await custom bet input
-            games[user_id]['status'] = 'awaiting_custom_bet'
-            await send_reply(
-                update,
-                context,
-                text="Please enter your custom bet amount:",
-                reply_markup=None
-            )
-            return
-    else:
-        await send_reply(update, context, "Received malformed data. Please try again.")
+    # Determine the bet amount based on the button clicked
+    if data[1] == 'quarter':
+        bet = last_bet / 4  # Bet exactly 1/4 of the last bet
+    elif data[1] == 'half':
+        bet = last_bet / 2  # Bet exactly 1/2 of the last bet
+    elif data[1] == 'double':
+        bet = last_bet * 2  # Bet exactly 2x of the last bet
+    elif data[1] == 'custom':
+        games[user_id]['status'] = 'awaiting_custom_bet'
+        await send_reply(
+            update,
+            context,
+            text="Please enter your custom bet amount:",
+            reply_markup=None
+        )
         return
 
-    if bet is not None:
-        # Validate that bet doesn't exceed balance
-        if bet > current_balance:
-            await send_reply(
-                update,
-                context,
-                f"❌ Insufficient balance.\nYour current balance: *${current_balance:,.2f}*"
-            )
-            return
-        else:
-            # Process the bet if balance is sufficient
-            await process_bet(update, context, bet, user_id)
-    else:
-        await send_reply(update, context, "An error occurred processing your bet. Please try again.")
+    # Ensure the bet is correctly validated against the current balance
+    if bet > current_balance:
+        await send_reply(update, context, f"❌ Insufficient balance. Your current balance: *${current_balance:,.2f}*")
+        return
+
+    # Process the bet
+    await process_bet(update, context, bet, user_id)
+
 
 
 
@@ -451,15 +436,6 @@ async def handle_try_again(update: Update, context):
     user = query.from_user
     data = query.data.split('_')
 
-    # Ensure the game state is initialized
-    ensure_game_initialized(user_id)
-
-    # Check if the user is already in a game
-    if games[user_id].get('status') == 'playing':
-        await query.answer("You are already in a game.", show_alert=True)
-        return
-
-    # Prevent interacting with the wrong game
     if int(data[2]) != user_id:
         await query.answer("You cannot interact with this game.", show_alert=True)
         return
@@ -475,11 +451,6 @@ async def handle_try_again(update: Update, context):
         )
         return
 
-    if user.username:
-        player_name = f"@{user.username}"
-    else:
-        player_name = user.full_name or user.first_name
-
     # Calculate new bet options based on the last bet
     quarter_bet = last_bet / 4
     half_bet = last_bet / 2
@@ -493,18 +464,19 @@ async def handle_try_again(update: Update, context):
         [InlineKeyboardButton("Enter Custom Bet", callback_data=f"bet_custom_{user_id}")]
     ]
 
+    # Prompt the user to place a new bet based on the last bet
     await send_reply(
         update,
         context,
-        text=f"👤 Player: {player_name}\n\n💸 Your last bet was *${last_bet:,.2f}*. Choose your next bet amount or enter a custom bet.",
+        text=(f"👤 Player: {user.first_name}\n\n💸 Your last bet was *${last_bet:,.2f}*.\n"
+              f"Choose your next bet amount or enter a custom bet."),
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-    # Update the game status
-    games[user_id]['status'] = 'placing_bet'
 
 
 
+# Process bet logic and display difficulty options
 # Process bet logic and display difficulty options
 async def process_bet(update: Update, context, bet, user_id):
     """Process the bet, check balance, and ask for difficulty selection."""
@@ -513,13 +485,14 @@ async def process_bet(update: Update, context, bet, user_id):
     # Get the user's current balance from the database
     current_balance = get_user_balance(user_id)
 
+    # Ensure that the bet is not greater than the balance
     if bet > current_balance:
         await send_reply(update, context, f"❌ Insufficient balance. Your current balance is: *${current_balance:,.2f}*")
         return
 
-    # Deduct the bet from the user's balance (only once here)
+    # Deduct the bet from the user's balance (ONLY ONCE)
     new_balance = current_balance - bet
-    update_user_balance(user_id, new_balance)  # Update the balance in the database
+    update_user_balance(user_id, new_balance)
 
     # Get user's current stats from the database
     total_bet, total_winnings = get_user_stats(user_id)
@@ -534,7 +507,7 @@ async def process_bet(update: Update, context, bet, user_id):
         'level': 0,
         'mode': None,
         'correct_buttons': [],
-        'status': 'playing',
+        'status': 'placing_bet',
         'last_bet': bet  # Store the bet for future reference (used for Try Again)
     }
 
@@ -551,6 +524,7 @@ async def process_bet(update: Update, context, bet, user_id):
         f"👤 Player: {user.first_name}\n\n💸 You bet: ${bet:,.2f}\n🔐 Choose difficulty level or cancel:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
 
 
 
@@ -731,29 +705,21 @@ def enable_buttons_for_level(buttons, level, user_id):
 async def receive_bet(update: Update, context):
     """Receive the custom bet amount if selected."""
     if update.message:
-        user_id = update.message.from_user.id  # User ID from the message
-        user = update.message.from_user  # Get the user from the message
+        user_id = update.message.from_user.id
+        user = update.message.from_user
     else:
-        return  # Safeguard: If there's no message, exit early
+        return
 
-    # Check if the user is in the game phase expecting a custom bet
     if user_id not in games or games[user_id].get('status') != 'awaiting_custom_bet':
-        return  # Ignore messages if the game is not in the custom bet-placing phase
-
-    # Get player's name (username or full name)
-    if user.username:
-        player_name = f"@{user.username}"
-    else:
-        player_name = user.full_name or user.first_name
+        return
 
     try:
-        # Convert the message text to a float to interpret it as a bet amount
         bet = float(update.message.text)
+        current_balance = get_user_balance(user_id)
 
         # Validate bet amount
-        current_balance = get_user_balance(user_id)
         if bet > current_balance:
-            await send_reply(update, context, f"👤 Player: {player_name}\n\n❌ Insufficient balance ❌\nYour current balance: *${current_balance:,.2f}*")
+            await send_reply(update, context, f"❌ Insufficient balance. Your current balance: *${current_balance:,.2f}*")
             return
         elif bet <= 0:
             await send_reply(update, context, "Please enter a valid bet amount greater than 0.")
@@ -763,8 +729,8 @@ async def receive_bet(update: Update, context):
         await process_bet(update, context, bet, user_id)
 
     except ValueError:
-        # Only send the error message if the bot is in the custom betting phase
         await send_reply(update, context, "Please enter a valid number.")
+
 
 
 
