@@ -317,8 +317,6 @@ async def add_balance(update: Update, context):
 
 
 
-
-
 # Handle bet options (1/4, 1/2 of the current balance or last bet, or custom)
 async def handle_bet_option(update: Update, context):
     """Handle predefined bet options or custom bet."""
@@ -326,6 +324,17 @@ async def handle_bet_option(update: Update, context):
     user = query.from_user
     user_id = user.id
     data = query.data.split('_')
+
+    # Ensure the game state for the user is initialized
+    if user_id not in games:
+        games[user_id] = {
+            'bet': 0,
+            'level': 0,
+            'mode': None,
+            'correct_buttons': [],
+            'status': 'placing_bet',
+            'last_bet': 0
+        }
 
     # Get the user's current balance from the database
     current_balance = get_user_balance(user_id)
@@ -394,6 +403,17 @@ async def handle_try_again(update: Update, context):
     user = query.from_user
     data = query.data.split('_')
 
+    # Ensure the game state for the user is initialized
+    if user_id not in games:
+        games[user_id] = {
+            'bet': 0,
+            'level': 0,
+            'mode': None,
+            'correct_buttons': [],
+            'status': 'placing_bet',
+            'last_bet': 0
+        }
+
     if int(data[2]) != user_id:
         await query.answer("You cannot interact with this game.", show_alert=True)
         return
@@ -421,9 +441,9 @@ async def handle_try_again(update: Update, context):
 
     # Create the buttons for the new bet options, including the 2x Bet
     keyboard = [
-        [InlineKeyboardButton(f"Bet 1/4 (${quarter_bet:,.2f})", callback_data=f"bet_quarter_{quarter_bet}"),
-         InlineKeyboardButton(f"Bet 1/2 (${half_bet:,.2f})", callback_data=f"bet_half_{half_bet}"),
-         InlineKeyboardButton(f"Bet 2x (${double_bet:,.2f})", callback_data=f"bet_double_{double_bet}")],
+        [InlineKeyboardButton(f"Bet 1/4 (${quarter_bet:,.2f})", callback_data=f"bet_quarter_{user_id}"),
+         InlineKeyboardButton(f"Bet 1/2 (${half_bet:,.2f})", callback_data=f"bet_half_{user_id}"),
+         InlineKeyboardButton(f"Bet 2x (${double_bet:,.2f})", callback_data=f"bet_double_{user_id}")],  # Add 2x Bet option
         [InlineKeyboardButton("Enter Custom Bet", callback_data=f"bet_custom_{user_id}")]
     ]
 
@@ -431,16 +451,28 @@ async def handle_try_again(update: Update, context):
     await send_reply(
         update,
         context,
-        text=(f"👤 Player: {player_name}\n\n💸 Your last bet was *${last_bet:,.2f}*.\n"
-              f"Choose your next bet amount or enter a custom bet."),
+        text=(f"👤 Player: {player_name}\n\n💸 Your last bet was *${last_bet:,.2f}*.\nChoose your next bet amount or enter a custom bet."),
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
 
 
 
 # Process bet logic and display difficulty options
 async def process_bet(update: Update, context, bet, user_id):
     """Process the bet, check balance, and ask for difficulty selection."""
+
+    # Ensure the game state for the user is initialized
+    if user_id not in games:
+        games[user_id] = {
+            'bet': 0,
+            'level': 0,
+            'mode': None,
+            'correct_buttons': [],
+            'status': 'placing_bet',
+            'last_bet': 0
+        }
+
     user = update.message.from_user if update.message else update.callback_query.from_user
 
     # Get the user's current balance from the database
@@ -485,6 +517,7 @@ async def process_bet(update: Update, context, bet, user_id):
         f"👤 Player: {user.first_name}\n\n💸 You bet: ${bet:,.2f}\n🔐 Choose difficulty level or cancel:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
 
 
 # 👤 Player: {player_name}\n\n
@@ -556,6 +589,17 @@ async def handle_choice(update: Update, context):
     data = query.data.split('_')
     user = query.from_user
 
+    # Ensure the game state for the user is initialized
+    if user_id not in games:
+        games[user_id] = {
+            'bet': 0,
+            'level': 0,
+            'mode': None,
+            'correct_buttons': [],
+            'status': 'placing_bet',
+            'last_bet': 0
+        }
+
     # Handle 'choice' separately
     if len(data) < 4:
         await query.answer("Invalid data received.", show_alert=True)
@@ -586,7 +630,7 @@ async def handle_choice(update: Update, context):
     correct_button = game['correct_buttons'][level]
 
     if chosen_button == correct_button:
-        # If the user chose correctly
+        # User chose correctly, update the game state
         game['level_buttons'][level][chosen_button] = InlineKeyboardButton("✅", callback_data="disabled")
         for i in range(len(game['level_buttons'][level])):
             if i != chosen_button:
@@ -621,7 +665,7 @@ async def handle_choice(update: Update, context):
             )
 
     else:
-        # If the user chose incorrectly
+        # User chose incorrectly
         game['level_buttons'][level][chosen_button] = InlineKeyboardButton("Your choice ❌", callback_data="disabled")
         game['level_buttons'][level][correct_button] = InlineKeyboardButton("Correct Choice ✅", callback_data="disabled")
         game['status'] = 'ended'
@@ -639,7 +683,6 @@ async def handle_choice(update: Update, context):
 
     # Edit the message with updated buttons (showing correct and incorrect choices)
     await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(game['level_buttons']))
-
 
 
 
