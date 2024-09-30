@@ -51,6 +51,10 @@ def ensure_game_initialized(user_id):
             'last_bet': 0  # Initialize with 0 for first-time players
         }
 
+
+conn = sqlite3.connect(DATABASE, check_same_thread=False)
+cursor = conn.cursor()
+
 # Ensure user and their data (balance and stats) are initialized
 def ensure_user_initialized(user_id):
     """Ensure user balance and stats are initialized in the database."""
