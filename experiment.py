@@ -321,17 +321,32 @@ async def add_balance(update: Update, context):
 
 # Handle bet options (1/4, 1/2 of the current balance or last bet, or custom)
 async def handle_bet_option(update: Update, context):
+    """Handle predefined bet options or custom bet."""
     query = update.callback_query
     user = query.from_user
     user_id = user.id
-    ensure_user_initialized(user_id)
-
-    # Directly parse the bet from the callback data (no additional calculations)
     data = query.data.split('_')
-    bet = float(data[2])
+
+    # Get the user's current balance from the database
+    current_balance = get_user_balance(user_id)
+
+    # Determine the bet amount based on the button clicked
+    if data[1] == 'quarter':
+        bet = float(data[2])  # Directly use the bet from the button value
+    elif data[1] == 'half':
+        bet = float(data[2])  # Directly use the bet from the button value
+    elif data[1] == 'custom':
+        # Set the game status to awaiting custom bet, no balance check here
+        games[user_id]['status'] = 'awaiting_custom_bet'
+        await send_reply(
+            update,
+            context,
+            text="Please enter your custom bet amount:",
+            reply_markup=None  # Remove any buttons while waiting for input
+        )
+        return
 
     # Ensure the bet is correctly validated against the current balance
-    current_balance = get_user_balance(user_id)
     if bet > current_balance:
         await send_reply(
             update,
@@ -394,18 +409,21 @@ async def handle_try_again(update: Update, context):
         )
         return
 
-    player_name = user.username or user.full_name or user.first_name
+    if user.username:
+        player_name = f"@{user.username}"
+    else:
+        player_name = user.full_name or user.first_name
 
-    # Correct bet options: 1/4, 1/2, and 2x of the last bet, without subtracting
+    # Calculate new bet options based on the last bet
     quarter_bet = last_bet / 4
     half_bet = last_bet / 2
     double_bet = last_bet * 2  # 2x Bet option
 
     # Create the buttons for the new bet options, including the 2x Bet
     keyboard = [
-        [InlineKeyboardButton(f"Bet 1/4 (${quarter_bet:,.2f})", callback_data=f"bet_quarter_{user_id}"),
-         InlineKeyboardButton(f"Bet 1/2 (${half_bet:,.2f})", callback_data=f"bet_half_{user_id}"),
-         InlineKeyboardButton(f"Bet 2x (${double_bet:,.2f})", callback_data=f"bet_double_{user_id}")],  # Add 2x Bet option
+        [InlineKeyboardButton(f"Bet 1/4 (${quarter_bet:,.2f})", callback_data=f"bet_quarter_{quarter_bet}"),
+         InlineKeyboardButton(f"Bet 1/2 (${half_bet:,.2f})", callback_data=f"bet_half_{half_bet}"),
+         InlineKeyboardButton(f"Bet 2x (${double_bet:,.2f})", callback_data=f"bet_double_{double_bet}")],
         [InlineKeyboardButton("Enter Custom Bet", callback_data=f"bet_custom_{user_id}")]
     ]
 
@@ -413,10 +431,8 @@ async def handle_try_again(update: Update, context):
     await send_reply(
         update,
         context,
-        text=(
-            f"👤 Player: {player_name}\n\n💸 Your last bet was *${last_bet:,.2f}*.\n"
-            f"Choose your next bet amount or enter a custom bet."
-        ),
+        text=(f"👤 Player: {player_name}\n\n💸 Your last bet was *${last_bet:,.2f}*.\n"
+              f"Choose your next bet amount or enter a custom bet."),
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -430,6 +446,7 @@ async def process_bet(update: Update, context, bet, user_id):
     # Get the user's current balance from the database
     current_balance = get_user_balance(user_id)
 
+    # Check if the bet exceeds the current balance
     if bet > current_balance:
         await send_reply(update, context, f"❌ Insufficient balance. Your current balance is: *${current_balance:,.2f}*")
         return
@@ -668,8 +685,9 @@ async def receive_bet(update: Update, context):
         bet = float(update.message.text)
 
         # Validate bet amount
-        if bet > user_balances[user_id]:
-            await send_reply(update, context, f"👤 Player: {player_name}\n\n❌ Insufficient balance ❌\nYour current balance: *${user_balances[user_id]:,.2f}*")
+        current_balance = get_user_balance(user_id)
+        if bet > current_balance:
+            await send_reply(update, context, f"👤 Player: {player_name}\n\n❌ Insufficient balance ❌\nYour current balance: *${current_balance:,.2f}*")
             return
         elif bet <= 0:
             await send_reply(update, context, "Please enter a valid bet amount greater than 0.")
