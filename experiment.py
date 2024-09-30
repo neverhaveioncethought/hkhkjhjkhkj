@@ -14,8 +14,6 @@ OWNER_USER_ID = 6752577843
 INITIAL_BALANCE = 5000.0  
 
 games = {}
-user_balances = {}
-user_stats = {}
 user_preferences = {}
 
 DATABASE = 'bot_data.db'
