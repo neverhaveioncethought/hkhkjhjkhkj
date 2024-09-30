@@ -370,15 +370,7 @@ async def handle_bet_option(update: Update, context):
     data = query.data.split('_')
 
     # Ensure the game is initialized for the user
-    if user_id not in games:
-        games[user_id] = {
-            'bet': 0,
-            'level': 0,
-            'mode': None,
-            'correct_buttons': [],
-            'status': 'placing_bet',
-            'last_bet': 0  # Initialize last_bet
-        }
+    ensure_game_initialized(user_id)
 
     # Get the user's current balance from the database
     current_balance = get_user_balance(user_id)
@@ -441,25 +433,11 @@ async def cancel_bet(update: Update, context):
 
 # Handle the 'Try Again' button press and restart the game for the user
 async def handle_try_again(update: Update, context):
-    """Handle the 'Try Again' button press and restart the game for the user."""
     query = update.callback_query
     user_id = query.from_user.id
-    user = query.from_user
-    data = query.data.split('_')
 
-    if int(data[2]) != user_id:
-        await query.answer("You cannot interact with this game.", show_alert=True)
-        return
-
-    if user_id not in games:
-        games[user_id] = {
-            'bet': 0,
-            'level': 0,
-            'mode': None,
-            'correct_buttons': [],
-            'status': 'placing_bet',
-            'last_bet': 0
-        }
+    # Ensure the game is initialized for the user
+    ensure_game_initialized(user_id)
 
     last_bet = games[user_id].get('last_bet', 0)
 
@@ -471,12 +449,11 @@ async def handle_try_again(update: Update, context):
         )
         return
 
-    # Calculate new bet options based on the last bet
+    # Proceed with try again logic
     quarter_bet = last_bet / 4
     half_bet = last_bet / 2
-    double_bet = last_bet * 2  # 2x Bet option
+    double_bet = last_bet * 2
 
-    # Create the buttons for the new bet options, including the 2x Bet
     keyboard = [
         [InlineKeyboardButton(f"Bet 1/4 (${quarter_bet:,.2f})", callback_data=f"bet_quarter_{user_id}"),
          InlineKeyboardButton(f"Bet 1/2 (${half_bet:,.2f})", callback_data=f"bet_half_{user_id}"),
@@ -484,52 +461,40 @@ async def handle_try_again(update: Update, context):
         [InlineKeyboardButton("Enter Custom Bet", callback_data=f"bet_custom_{user_id}")]
     ]
 
-    # Prompt the user to place a new bet based on the last bet
     await send_reply(
         update,
         context,
-        text=(f"👤 Player: {user.first_name}\n\n💸 Your last bet was *${last_bet:,.2f}*.\n"
+        text=(f"👤 Player: {query.from_user.first_name}\n\n💸 Your last bet was *${last_bet:,.2f}*.\n"
               f"Choose your next bet amount or enter a custom bet."),
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
 
-
-# Process bet logic and display difficulty options
 # Process bet logic and display difficulty options
 async def process_bet(update: Update, context, bet, user_id):
     """Process the bet, check balance, and ask for difficulty selection."""
-    user = update.message.from_user if update.message else update.callback_query.from_user
+    # Ensure the game is initialized for the user
+    ensure_game_initialized(user_id)
 
-    # Get the user's current balance from the database
     current_balance = get_user_balance(user_id)
-
-    # Ensure that the bet is not greater than the balance
     if bet > current_balance:
         await send_reply(update, context, f"❌ Insufficient balance. Your current balance is: *${current_balance:,.2f}*")
         return
 
-    # Deduct the bet from the user's balance (ONLY ONCE)
+    # Deduct the bet from the user's balance
     new_balance = current_balance - bet
     update_user_balance(user_id, new_balance)
 
-    # Get user's current stats from the database
-    total_bet, total_winnings = get_user_stats(user_id)
-
     # Update the total bet in the stats
+    total_bet, total_winnings = get_user_stats(user_id)
     total_bet += bet
     update_user_stats(user_id, total_bet, total_winnings)
 
     # Store the bet and initialize the game state
-    games[user_id] = {
-        'bet': bet,  # Store the current bet
-        'level': 0,
-        'mode': None,
-        'correct_buttons': [],
-        'status': 'placing_bet',
-        'last_bet': bet  # Store the bet for future reference (used for Try Again)
-    }
+    games[user_id]['bet'] = bet
+    games[user_id]['status'] = 'placing_bet'
+    games[user_id]['last_bet'] = bet
 
     # Display difficulty selection buttons
     keyboard = [
@@ -541,10 +506,9 @@ async def process_bet(update: Update, context, bet, user_id):
     await send_reply(
         update,
         context,
-        f"👤 Player: {user.first_name}\n\n💸 You bet: ${bet:,.2f}\n🔐 Choose difficulty level or cancel:",
+        f"👤 Player: {update.message.from_user.first_name}\n\n💸 You bet: ${bet:,.2f}\n🔐 Choose difficulty level or cancel:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
-
 
 
 
@@ -615,6 +579,9 @@ async def handle_choice(update: Update, context):
     """Handle the player's choice and update the game."""
     query = update.callback_query
     user_id = query.from_user.id
+
+    ensure_game_initialized(user_id)
+    
     data = query.data.split('_')
     user = query.from_user
 
