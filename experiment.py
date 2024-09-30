@@ -255,6 +255,7 @@ async def user_stats_command(update: Update, context):
 
 
 # Handle Cashout action
+# Handle Cashout action
 async def handle_cashout(update: Update, context):
     """Handle the cashout button press and end the game."""
     query = update.callback_query
@@ -278,12 +279,14 @@ async def handle_cashout(update: Update, context):
     else:
         player_name = user.full_name or user.first_name
 
+    # Retrieve the player's bet from the game state
+    bet = game['bet']
+
     # Calculate the total winnings (including the original bet)
     if game['level'] == 0:
-        net_winnings = 0
-        total_winnings = game['bet']  # No levels completed, just return the bet
+        total_winnings = bet  # No levels completed, just return the bet
     else:
-        total_winnings = game['bet'] * game['multipliers'][game['level'] - 1]  # Include multiplier
+        total_winnings = bet * game['multipliers'][game['level'] - 1]  # Include multiplier
 
     # Add the total winnings to the user's balance (not just the net winnings)
     current_balance = get_user_balance(user_id)
@@ -293,11 +296,11 @@ async def handle_cashout(update: Update, context):
     # Get user's current stats from the database
     total_bet, total_winnings_db = get_user_stats(user_id)
 
+    net_winnings = total_winnings - bet
+
     # Update user's total winnings in stats
     total_winnings_db += total_winnings
     update_user_stats(user_id, total_bet, total_winnings_db)
-
-    net_winnings = total_winnings - bet
 
     # Send a message to the user confirming their total winnings
     await send_reply(
@@ -312,7 +315,6 @@ async def handle_cashout(update: Update, context):
 
     # Disable all buttons after cashout
     await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(game['level_buttons']))
-
 
 
 
