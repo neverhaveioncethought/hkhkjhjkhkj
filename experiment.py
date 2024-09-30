@@ -397,11 +397,6 @@ async def add_balance(update: Update, context):
     except ValueError:
         await send_reply(update, context, "Invalid input. Please provide numeric values.")
 
-
-
-
-
-# Handle Cashout action
 # Handle Cashout action
 async def handle_cashout(update: Update, context):
     """Handle the cashout button press and end the game."""
@@ -420,7 +415,6 @@ async def handle_cashout(update: Update, context):
         await query.answer("The game has already ended.")
         return
 
-    # Get player's name (username or full name)
     if user.username:
         player_name = f"@{user.username}"
     else:
@@ -435,23 +429,23 @@ async def handle_cashout(update: Update, context):
     # Calculate the net winnings (this is what the player actually won, excluding the original bet)
     net_winnings = winnings - game['bet']
 
-    # Get user's current stats from the database
-    total_bet, total_winnings = get_user_stats(user_id)
-
     # Update user's total winnings in stats
-    total_winnings += net_winnings
-    update_user_stats(user_id, total_bet, total_winnings)
+    user_stats[user_id]["total_winnings"] += net_winnings
 
-    # Add the net winnings to the user's balance
-    current_balance = get_user_balance(user_id)
-    new_balance = current_balance + net_winnings
-    update_user_balance(user_id, new_balance)
+    # Add only the net winnings to the user's balance
+    user_balances[user_id] += net_winnings
 
-    # Send a message to the user confirming their cashout and showing only the net winnings
+    # Create the button to ask the user if they want to play again
+    keyboard = [
+        [InlineKeyboardButton("🎮 Play Again", callback_data=f"play_again_{user_id}")]
+    ]
+
+    # Send a message to the user confirming their cashout and asking if they want to play again
     await send_reply(
         update,
         context,
-        text=f"👤 Player: {player_name}\n\n💰 You've cashed out!\n📈 Net gain: *${net_winnings:,.2f}*!\n💸 Your new balance is *${new_balance:,.2f}*"
+        text=f"👤 Player: {player_name}\n\n💰 You've cashed out!\n📈 Net gain: *${net_winnings:,.2f}*!\n💸 Your new balance is *${user_balances[user_id]:,.2f}*",
+        reply_markup=InlineKeyboardMarkup(keyboard)  # Add the "Play Again" button
     )
 
     # Mark the game as cashed out and disable further interactions
@@ -460,10 +454,6 @@ async def handle_cashout(update: Update, context):
 
     # Disable all buttons after cashout
     await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(game['level_buttons']))
-
-
-
-
 
 # Handle bet options (1/4, 1/2 of the current balance or last bet, or custom)
 async def handle_bet_option(update: Update, context):
@@ -505,57 +495,57 @@ async def handle_bet_option(update: Update, context):
         await process_bet(update, context, bet, user_id)
 
 
-
-
-
-
-
-
 # Cancel the bet and reset the game
 async def cancel_bet(update: Update, context):
-    """Cancel the bet and reset the game without modifying the user's balance."""
+    """Cancel the bet, reset the game, and refund the user's bet amount."""
     query = update.callback_query
     user_id = query.from_user.id
-    data = query.data.split('_')
     user = query.from_user
+    data = query.data.split('_')
 
+    # Ensure the cancel action is for the correct user
+    if int(data[1]) != user_id:
+        await query.answer("You cannot interact with this game.", show_alert=True)
+        return
 
+    # Get the game and bet information for this user
+    game = games.get(user_id)
+
+    # Ensure there is a game and the game status allows cancellation
+    if not game or game['status'] != 'placing_bet':
+        await query.answer("No active bet to cancel.", show_alert=True)
+        return
+
+    # Get the bet amount to refund
+    bet = game['bet']
+
+    if bet > 0:
+        # Refund the user's bet amount to their balance
+        user_balances[user_id] += bet
+
+    # Reset the game state for this user
+    games[user_id] = {}
 
     if user.username:
         player_name = f"@{user.username}"
     else:
         player_name = user.full_name or user.first_name
-    # Ensure the cancel action is for the right user
-    if int(data[1]) != user_id:
-        await query.answer("You cannot interact with this game.", show_alert=True)
-        return
 
-    # Ensure a game exists and the status allows cancellation
-    game = games.get(user_id)
-    if not game or game['status'] != 'placing_bet':
-        await query.answer("No active bet to cancel.", show_alert=True)
-        return
-
-    # Reset the game state for this user
-    games[user_id] = {}
-
-    # Respond to the user with a confirmation message and update UI
+    # Notify the user that the game has been canceled and the bet has been refunded
     await send_reply(
         update,
         context,
-        text=f"👤 Player: {player_name}\n\n❌BET CANCELED❌\n\nYour balance remains *${user_balances[user_id]:,.2f}*"
+        text=f"👤 Player: {player_name}\n\n❌ BET CANCELED ❌\nYour bet of *${bet:,.2f}* has been refunded.\n💸 Your balance is now *${user_balances[user_id]:,.2f}*."
     )
 
     # Disable any active buttons to prevent further interaction
     await query.edit_message_reply_markup(reply_markup=None)
 
-    # Acknowledge the query to prevent loading animation
+    # Acknowledge the query to stop the "loading" animation
     await query.answer()
 
 
-
-
-# Handle the 'Try Again' button press and restart the game for the user
+# Handle 'Try Again' button press and restart the game for the user
 async def handle_try_again(update: Update, context):
     """Handle the 'Try Again' button press and restart the game for the user."""
     query = update.callback_query
@@ -600,13 +590,10 @@ async def handle_try_again(update: Update, context):
     await send_reply(
         update,
         context,
-        text=(
-            f"👤 Player: {player_name}\n\n💸 Your last bet was *${last_bet:,.2f}*.\n"
-            f"Choose your next bet amount or enter a custom bet."
-        ),
+        text=(f"👤 Player: {player_name}\n\n💸 Your last bet was *${last_bet:,.2f}*.\n"
+              f"Choose your next bet amount or enter a custom bet."),
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
-
 
 
 
@@ -859,7 +846,6 @@ def enable_buttons_for_level(buttons, level, user_id):
     return buttons
 
 
-
 # Receive and process the custom bet amount
 async def receive_bet(update: Update, context):
     """Receive the custom bet amount if selected."""
@@ -898,6 +884,27 @@ async def receive_bet(update: Update, context):
         # Only send the error message if the bot is in the custom betting phase
         await send_reply(update, context, "Please enter a valid number.")
 
+
+# Handle the "Play Again" button press
+async def handle_play_again(update: Update, context):
+    """Handle the 'Play Again' button press and restart the game for the user."""
+    query = update.callback_query
+    user_id = query.from_user.id
+    user = query.from_user
+
+    # Reset the game state for this user (if you want a fresh start)
+    games[user_id] = {
+        'bet': 0,  # Initialize bet to 0
+        'level': 0,
+        'mode': None,
+        'correct_buttons': [],
+        'status': 'placing_bet'
+    }
+
+    # Bring the user to the betting prompt again
+    await tower(update, context)
+
+    await query.answer()  # Acknowledge the button press
 
 
 # Command to reset all user balances (restricted to allowed admins)
@@ -987,6 +994,9 @@ def main():
     app.add_handler(CallbackQueryHandler(cancel_bet, pattern='^cancel_'))
     app.add_handler(CallbackQueryHandler(handle_choice, pattern='^choice_'))
     app.add_handler(CallbackQueryHandler(handle_cashout, pattern='^cashout_'))
+    # Add the handler to handle the 'Play Again' button press
+    app.add_handler(CallbackQueryHandler(handle_play_again, pattern='^play_again_'))
+
 
     app.add_handler(CallbackQueryHandler(handle_try_again, pattern='^try_again_'))
 
