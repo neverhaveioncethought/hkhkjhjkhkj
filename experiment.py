@@ -256,39 +256,63 @@ async def user_stats_command(update: Update, context):
 
 # Handle Cashout action
 async def handle_cashout(update: Update, context):
+    """Handle the cashout button press and end the game."""
     query = update.callback_query
     user_id = query.from_user.id
     user = query.from_user
-    game = games.get(user_id)
+    data = query.data.split('_')
 
+    # Ensure that the callback data and user ID match
+    if int(data[1]) != user_id:
+        await query.answer("You cannot interact with this game.", show_alert=True)
+        return
+
+    game = games.get(user_id)
     if not game or game['status'] != 'playing':
         await query.answer("The game has already ended.")
         return
 
-    level = game['level']
-    bet = game['bet']
-
+    # Get player's name (username or full name)
     if user.username:
         player_name = f"@{user.username}"
     else:
         player_name = user.full_name or user.first_name
 
-    if level == 0:
+    # Calculate the total winnings (including the original bet)
+    if game['level'] == 0:
         net_winnings = 0
+        total_winnings = game['bet']  # No levels completed, just return the bet
     else:
-        total_winnings = bet * game['multipliers'][level - 1]
-        net_winnings = total_winnings - bet
+        total_winnings = game['bet'] * game['multipliers'][game['level'] - 1]  # Include multiplier
 
-    update_user_stats(user_id, 0, net_winnings)
-
-    new_balance = get_user_balance(user_id) + net_winnings
+    # Add the total winnings to the user's balance (not just the net winnings)
+    current_balance = get_user_balance(user_id)
+    new_balance = current_balance + total_winnings
     update_user_balance(user_id, new_balance)
 
-    await send_reply(update, context, text=f"👤 Player: {player_name}\n\n🎉 You've cashed out!\n📈 Net gain: *${net_winnings:,.2f}*\n💸 Your new balance is *${new_balance:,.2f}*")
+    # Get user's current stats from the database
+    total_bet, total_winnings_db = get_user_stats(user_id)
+
+    # Update user's total winnings in stats
+    total_winnings_db += total_winnings
+    update_user_stats(user_id, total_bet, total_winnings_db)
+
+    net_winnings = total_winnings - bet
+
+    # Send a message to the user confirming their total winnings
+    await send_reply(
+        update,
+        context,
+        text=f"👤 Player: {player_name}\n\n💰 You've cashed out!\n📈 Net winnings: *${net_winnings:,.2f}*!\n💸 Your new balance is *${new_balance:,.2f}*"
+    )
+
+    # Mark the game as cashed out and disable further interactions
     game['status'] = 'cashed_out'
     game['level_buttons'] = disable_all_buttons(game['level_buttons'])
 
+    # Disable all buttons after cashout
     await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(game['level_buttons']))
+
 
 
 
