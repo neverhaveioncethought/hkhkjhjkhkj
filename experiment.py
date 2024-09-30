@@ -484,30 +484,33 @@ async def process_bet(update: Update, context, bet, user_id):
     """Process the bet, check balance, and ask for difficulty selection."""
     user = update.message.from_user if update.message else update.callback_query.from_user
 
-    # Fetch the current balance from the database
+    # Get the user's current balance from the database
     current_balance = get_user_balance(user_id)
 
-    # Check if the bet exceeds the balance
     if bet > current_balance:
         await send_reply(update, context, f"❌ Insufficient balance. Your current balance is: *${current_balance:,.2f}*")
         return
 
-    # Deduct the bet from the user's balance
+    # Deduct the bet from the user's balance (only once here)
     new_balance = current_balance - bet
-    update_user_balance(user_id, new_balance)  # Update balance in the database
+    update_user_balance(user_id, new_balance)  # Update the balance in the database
 
-    # Update total bet stats
+    # Get user's current stats from the database
     total_bet, total_winnings = get_user_stats(user_id)
+
+    # Update the total bet in the stats
     total_bet += bet
     update_user_stats(user_id, total_bet, total_winnings)
 
-    # Initialize the game state for the bet
-    games[user_id]['bet'] = bet
-    games[user_id]['level'] = 0
-    games[user_id]['mode'] = None
-    games[user_id]['correct_buttons'] = []
-    games[user_id]['status'] = 'placing_bet'
-    games[user_id]['last_bet'] = bet  # Update last bet for future references
+    # Store the bet and initialize the game state
+    games[user_id] = {
+        'bet': bet,  # Store the current bet
+        'level': 0,
+        'mode': None,
+        'correct_buttons': [],
+        'status': 'playing',
+        'last_bet': bet  # Store the bet for future reference (used for Try Again)
+    }
 
     # Display difficulty selection buttons
     keyboard = [
@@ -522,6 +525,7 @@ async def process_bet(update: Update, context, bet, user_id):
         f"👤 Player: {user.first_name}\n\n💸 You bet: ${bet:,.2f}\n🔐 Choose difficulty level or cancel:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
 
 
 
@@ -594,14 +598,12 @@ async def handle_choice(update: Update, context):
     data = query.data.split('_')
     user = query.from_user
 
-    # Ensure the game data is initialized for the user
-    ensure_user_initialized(user_id)
-
     # Handle 'choice' separately
     if len(data) < 4:
         await query.answer("Invalid data received.", show_alert=True)
         return
 
+    # Check if the button interaction is from the correct user
     if int(data[3]) != user_id:
         await query.answer("You cannot interact with this game.", show_alert=True)
         return
@@ -618,10 +620,15 @@ async def handle_choice(update: Update, context):
         await query.answer(f"You're on level {game['level']}! Please make a selection for the correct level.", show_alert=True)
         return
 
+    if user.username:
+        player_name = f"@{user.username}"
+    else:
+        player_name = user.full_name or user.first_name
+
     correct_button = game['correct_buttons'][level]
 
     if chosen_button == correct_button:
-        # If the user chose correctly, disable further interactions
+        # If the user chose correctly
         game['level_buttons'][level][chosen_button] = InlineKeyboardButton("✅", callback_data="disabled")
         for i in range(len(game['level_buttons'][level])):
             if i != chosen_button:
@@ -629,11 +636,11 @@ async def handle_choice(update: Update, context):
 
         game['level'] += 1
 
-        # Calculate current winnings
+        # Calculate the current winnings based on the level
         current_winnings = game['bet'] * game['multipliers'][game['level'] - 1]
 
+        # If the user completed all levels
         if game['level'] >= len(game['multipliers']):
-            # Handle successful completion of all levels
             winnings = game['bet'] * game['multipliers'][-1]
             current_balance = get_user_balance(user_id)
             new_balance = current_balance + winnings
@@ -642,34 +649,38 @@ async def handle_choice(update: Update, context):
             await send_reply(
                 update,
                 context,
-                text=f"👤 Player: {user.first_name}\n\n🎉 Congratulations! You've completed all levels!\n💸 You won: *${winnings:,.2f}*"
+                text=f"👤 Player: {player_name}\n\n🎉 Congratulations! You've completed all levels!\n💸 You won: *${winnings:,.2f}*"
             )
             game['status'] = 'completed'
         else:
+            # Enable the buttons for the next level
             game['level_buttons'] = enable_buttons_for_level(game['level_buttons'], game['level'], user_id)
 
         # Add the cashout button after the first correct answer
-        if game['level'] == 1:
+        if game['level'] == 1:  # Add the cashout button after the first correct answer
             game['level_buttons'].append(
                 [InlineKeyboardButton(f"💰 Cashout (${current_winnings:,.2f})", callback_data=f"cashout_{user_id}")]
             )
 
     else:
+        # If the user chose incorrectly, do not deduct the bet again
         game['level_buttons'][level][chosen_button] = InlineKeyboardButton("Your choice ❌", callback_data="disabled")
         game['level_buttons'][level][correct_button] = InlineKeyboardButton("Correct Choice ✅", callback_data="disabled")
         game['status'] = 'ended'
 
+        # Send a message with "Try Again" button
         await send_reply(
             update,
             context,
-            text=f"👤 Player: {user.first_name}\n❌ YOU LOST ❌\n\nYour new balance: *${get_user_balance(user_id):,.2f}*",
+            text=f"👤 Player: {player_name}\n❌ YOU LOST ❌\n\nYour new balance: *${get_user_balance(user_id):,.2f}*",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Try Again❓", callback_data=f"try_again_{user_id}")]])
         )
 
+        # Disable all buttons after the game ends (disable interaction on the original buttons)
         game['level_buttons'] = disable_all_buttons(game['level_buttons'])
 
+    # Edit the message with updated buttons (showing correct and incorrect choices)
     await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(game['level_buttons']))
-
 
 
 
