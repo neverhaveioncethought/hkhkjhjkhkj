@@ -495,6 +495,49 @@ async def handle_bet_option(update: Update, context):
         # If balance is sufficient, process the bet
         await process_bet(update, context, bet, user_id)
 
+async def handle_bet_option(update: Update, context):
+    """Handle predefined bet options or custom bet."""
+    query = update.callback_query
+    user_id = query.from_user.id
+    data = query.data.split('_')
+
+    # Ensure the user's balance is initialized
+    ensure_user_initialized(user_id)
+
+    # Get the user's current balance
+    current_balance = user_balances[user_id]
+
+    # Determine the bet amount based on the button clicked
+    bet = None
+    if data[1] == 'quarter':
+        bet = current_balance / 4  # Bet exactly 1/4 of the current balance
+    elif data[1] == 'half':
+        bet = current_balance / 2  # Bet exactly 1/2 of the current balance
+    elif data[1] == 'double':
+        last_bet = games[user_id].get('last_bet', current_balance)  # Default to full balance if no last bet
+        bet = last_bet * 2  # Bet exactly 2x the last bet
+    elif data[1] == 'custom':
+        games[user_id]['status'] = 'awaiting_custom_bet'
+        await send_reply(
+            update,
+            context,
+            text="Please enter your custom bet amount:",
+            reply_markup=None  # Remove any buttons while waiting for input
+        )
+        return
+
+    # Ensure the bet is properly validated
+    if bet is not None and bet > current_balance:
+        await send_reply(
+            update,
+            context,
+            f"❌ Insufficient balance.\nYour current balance: *${current_balance:,.2f}*"
+        )
+        return
+
+    # If balance is sufficient, process the bet
+    await process_bet(update, context, bet, user_id)
+
 def ensure_user_initialized(user_id):
     """Ensure the user's balance and stats are initialized."""
     if user_id not in user_balances:
@@ -502,7 +545,7 @@ def ensure_user_initialized(user_id):
         user_stats[user_id] = {"total_bet": 0.0, "total_winnings": 0.0}
 
 
-# Cancel the bet and reset the game
+
 async def cancel_bet(update: Update, context):
     """Cancel the bet, reset the game, and refund the user's bet amount."""
     query = update.callback_query
@@ -510,10 +553,8 @@ async def cancel_bet(update: Update, context):
     user = query.from_user
     data = query.data.split('_')
 
-    # Ensure the cancel action is for the correct user
-    if int(data[1]) != user_id:
-        await query.answer("You cannot interact with this game.", show_alert=True)
-        return
+    # Ensure the user's balance is initialized
+    ensure_user_initialized(user_id)
 
     # Get the game and bet information for this user
     game = games.get(user_id)
@@ -550,6 +591,7 @@ async def cancel_bet(update: Update, context):
 
     # Acknowledge the query to stop the "loading" animation
     await query.answer()
+
 
 
 
