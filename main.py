@@ -9,7 +9,7 @@ MULTIPLIERS_EASY = [1.2, 1.52, 2.07, 2.5, 3.0]
 MULTIPLIERS_HARD = [1.2, 1.52, 2.07, 2.5, 3.5, 4.0, 5.0]
 MULTIPLIERS_SPECIAL = [1.5, 2.0, 2.5, 3.0, 6.0]
 
-ALLOWED_USER_IDS = [6752577843, 7040537198]
+ALLOWED_USER_IDS = [6752577843]
 OWNER_USER_ID = 6752577843
 INITIAL_BALANCE = 5000.0
 
@@ -234,14 +234,21 @@ async def tower(update: Update, context):
     user = update.message.from_user if update.message else update.callback_query.from_user
     user_id = user.id
 
-    if user_id not in games:
-        games[user_id] = {'user_id': user_id, 'bet': 0, 'level': 0, 'mode': None, 'correct_buttons': [], 'status': 'placing_bet'}
+    if user.username:
+        player_name = f"@{user.username}"
+    else:
+        player_name = user.full_name or user.first_name
 
-    player_name = f"@{user.username}" if user.username else user.full_name
+    # Get user balance from the database
     current_balance = get_user_balance(user_id)
     quarter_balance = current_balance / 4
     half_balance = current_balance / 2
 
+    # Store initial game state in memory if it doesn't exist
+    if user_id not in games:
+        games[user_id] = {'bet': 0, 'level': 0, 'mode': None, 'correct_buttons': [], 'status': 'placing_bet'}
+
+    # Display buttons for betting options: 1/4, 1/2, or custom bet
     keyboard = [
         [InlineKeyboardButton(f"Bet 1/4 (${quarter_balance:,.2f})", callback_data=f"bet_quarter_{user_id}"),
          InlineKeyboardButton(f"Bet 1/2 (${half_balance:,.2f})", callback_data=f"bet_half_{user_id}")],
@@ -254,7 +261,6 @@ async def tower(update: Update, context):
         text=f"👤 Player: {player_name}\n💸 Current balance: *${current_balance:,.2f}*\n💵 Choose your bet amount:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
-
 
 # /check_balance command to check user's balance
 async def check_balance(update: Update, context):
@@ -376,23 +382,52 @@ async def handle_bet_option(update: Update, context):
 # Process bet logic and display difficulty options
 async def process_bet(update: Update, context, bet, user_id):
     """Process the bet, check balance, and ask for difficulty selection."""
-    current_balance = get_user_balance(user_id)
-    new_balance = current_balance - bet
-    update_user_balance(user_id, new_balance)
+    user = update.message.from_user if update.message else update.callback_query.from_user
 
+    # Get the user's current balance from the database
+    current_balance = get_user_balance(user_id)
+
+    logger.info(f"User {user_id} current balance before placing bet: ${current_balance:.2f}")
+
+    if user.username:
+        player_name = f"@{user.username}"
+    else:
+        player_name = user.full_name or user.first_name
+
+    if bet > current_balance:
+        await send_reply(update, context, f"👤 Player: {player_name}\n\n❌ Insufficient balance ❌\n\nYour current balance is: *${current_balance:,.2f}*")
+        return
+
+    # Deduct the bet from the user's balance (this should only happen once)
+    new_balance = current_balance - bet
+    update_user_balance(user_id, new_balance)  # Update the balance in the database
+    
+    logger.info(f"User {user_id} placing bet of ${bet:.2f}, new balance after bet: ${new_balance:.2f}")
+
+    # Get user's current stats from the database
+    total_bet, total_winnings = get_user_stats(user_id)
+
+    # Update the total bet in the stats
+    total_bet += bet
+    update_user_stats(user_id, total_bet, total_winnings)
+
+    # Store the bet and update the last_bet in the game state
     games[user_id]['bet'] = bet
-    games[user_id]['last_bet'] = bet  
+    games[user_id]['last_bet'] = bet  # Update last_bet after placing the bet
     games[user_id]['level'] = 0
+    games[user_id]['mode'] = None
     games[user_id]['correct_buttons'] = []
     games[user_id]['status'] = 'placing_bet'
 
+    logger.info(f"Game initialized for user {user_id} with bet: ${bet:.2f}")
+
+    # Display difficulty selection buttons
     keyboard = [
         [InlineKeyboardButton("Easy (5 levels)", callback_data=f'easy_{user_id}'),
-         InlineKeyboardButton("Hard (8 levels)", callback_data=f'hard_{user_id}')],
-        [InlineKeyboardButton("Special (7 levels)", callback_data=f'special_{user_id}')]
+         InlineKeyboardButton("Hard (8 levels)", callback_data=f'hard_{user_id}'),
+         InlineKeyboardButton("Special Season (5 levels)", callback_data=f'special_{user_id}')],
+        [InlineKeyboardButton("Cancel Bet", callback_data=f'cancel_{user_id}')]
     ]
-
-    player_name = f"@{update.message.from_user.username}" if update.message.from_user.username else update.message.from_user.full_name
 
     await send_reply(
         update,
@@ -400,8 +435,6 @@ async def process_bet(update: Update, context, bet, user_id):
         f"👤 Player: {player_name}\n\n💸 You bet: ${bet:,.2f}\n🔐 Choose difficulty level or cancel:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
-
-
 
 
 
@@ -465,11 +498,23 @@ async def set_difficulty(update: Update, context):
     user_id = user.id
     data = query.data.split('_')
 
-    mode = data[0]
-    if mode not in ['easy', 'hard', 'special']:
-        await query.answer("Invalid mode selected", show_alert=True)
+    if int(data[1]) != user_id:
+        await query.answer("You cannot interact with this game.", show_alert=True)
         return
 
+    # Check if the bet exists in the game session
+    if 'bet' not in games[user_id]:
+        await query.answer("No active bet found. Please start a new game.", show_alert=True)
+        return
+
+    # Get the player's name (username or full name)
+    if user.username:
+        player_name = f"@{user.username}"
+    else:
+        player_name = user.full_name or user.first_name
+
+    # Set the difficulty mode and initialize the game state
+    mode = data[0]
     games[user_id]['mode'] = mode
     bet_amount = games[user_id]['bet']
 
@@ -479,51 +524,56 @@ async def set_difficulty(update: Update, context):
         games[user_id]['multipliers'] = MULTIPLIERS_HARD
     elif mode == 'special':
         games[user_id]['multipliers'] = MULTIPLIERS_SPECIAL
+    else:
+        await query.answer("Invalid mode selected", show_alert=True)
+        return
 
     games[user_id]['level_buttons'] = await create_level_buttons(user_id)
     games[user_id]['status'] = 'playing'
 
+    # Enable buttons for the first level
+    games[user_id]['level_buttons'] = enable_buttons_for_level(games[user_id]['level_buttons'], 0, user_id)
+
+    # Display the bet amount and start the game
     await query.edit_message_text(
-        f"👤 Player: {user.username if user.username else user.full_name}\n\n🏢 Towers mode: {mode.capitalize()}\n💸 Bet amount: *${bet_amount:,.2f}*\n🎉 Let's start the game!",
+        f"🏢 Towers | 🍁 Fall Season\n👤 Player: {player_name}\n\nMode: {mode.capitalize()}\n💸 Bet amount: *${bet_amount:,.2f}*\n🎉 Let's start the game!",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(games[user_id]['level_buttons'])
     )
 
-
-
 # Create level buttons with bet * multiplier values
 async def create_level_buttons(user_id):
+    """Create initial level buttons with different number of buttons per row based on the mode."""
     game = games[user_id]
     bet = game['bet']
-    mode = game['mode']
     multipliers = game['multipliers']
+    mode = game['mode']  # Get the current mode
 
     buttons = []
+    
+    # Determine the number of buttons per row based on the mode
+    if mode == 'easy':
+        buttons_per_row = 2
+    elif mode == 'hard':
+        buttons_per_row = 3
+    elif mode == 'special':
+        buttons_per_row = 4
+    else:
+        raise ValueError("Invalid game mode")
+
+    # Create buttons based on the number of buttons per row for the current mode
     for level in range(len(multipliers)):
         row = []
-        correct_button = random.randint(0, len(multipliers) - 1)
-        game['correct_buttons'].append(correct_button)
+        correct_button = random.randint(0, buttons_per_row - 1)  # Random correct button index
+        game['correct_buttons'].append(correct_button)  # Store the correct button for each level
 
-        # Determine the number of buttons per row based on mode
-        button_count = 2 if mode == 'easy' else 3 if mode == 'hard' else 4
-
-        for i in range(button_count):
+        for i in range(buttons_per_row):
             amount = bet * multipliers[level]
             row.append(InlineKeyboardButton(f"${amount:,.2f}", callback_data=f"choice_{level}_{i}_{user_id}"))
 
         buttons.append(row)
 
     return buttons
-
-
-
-# Update the keyboard for difficulty selection
-keyboard = [
-    [InlineKeyboardButton("Easy (5 levels)", callback_data=f'easy_{user_id}'),
-     InlineKeyboardButton("Hard (8 levels)", callback_data=f'hard_{user_id}')],
-    [InlineKeyboardButton("Special (8 levels)", callback_data=f'special_{user_id}')],  # Special mode
-    [InlineKeyboardButton("Cancel Bet", callback_data=f'cancel_{user_id}')]
-]
 
 
 # Handle the player's choice and update the game state
@@ -898,7 +948,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_play_location_choice, pattern='^play_dm|play_group_chat'))
     app.add_handler(CallbackQueryHandler(handle_start_options, pattern='^show_stats|start_game|check_balance'))
     app.add_handler(CallbackQueryHandler(handle_bet_option, pattern='^bet_'))
-    app.add_handler(CallbackQueryHandler(set_difficulty, pattern='^easy_|hard_|special_'))
+    app.add_handler(CallbackQueryHandler(set_difficulty, pattern='^easy_|hard_'))
     app.add_handler(CallbackQueryHandler(cancel_bet, pattern='^cancel_'))
     app.add_handler(CallbackQueryHandler(handle_choice, pattern='^choice_'))
     app.add_handler(CallbackQueryHandler(handle_cashout, pattern='^cashout_'))
