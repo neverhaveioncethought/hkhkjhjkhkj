@@ -228,25 +228,27 @@ async def tower(update: Update, context):
     user = update.message.from_user if update.message else update.callback_query.from_user
     user_id = user.id
 
+    # Ensure the user is initialized in the games dictionary
     if user_id not in games:
-        games[user_id] = {'bet': 0, 'level': 0, 'mode': None, 'correct_buttons': [], 'status': 'placing_bet', 'user_id': user_id}
-
+        games[user_id] = {
+            'bet': 0,
+            'level': 0,
+            'mode': None,
+            'correct_buttons': [],
+            'status': 'placing_bet',
+            'last_bet': 0,
+            'user_id': user_id  # Ensure 'user_id' is added
+        }
 
     if user.username:
         player_name = f"@{user.username}"
     else:
         player_name = user.full_name or user.first_name
 
-    
     current_balance = get_user_balance(user_id)
     quarter_balance = current_balance / 4
     half_balance = current_balance / 2
 
-    
-    if user_id not in games:
-        games[user_id] = {'bet': 0, 'level': 0, 'mode': None, 'correct_buttons': [], 'status': 'placing_bet'}
-
-    
     keyboard = [
         [InlineKeyboardButton(f"Bet 1/4 (${quarter_balance:,.2f})", callback_data=f"bet_quarter_{user_id}"),
          InlineKeyboardButton(f"Bet 1/2 (${half_balance:,.2f})", callback_data=f"bet_half_{user_id}")],
@@ -325,7 +327,7 @@ async def handle_bet_option(update: Update, context):
         }
 
     # Make sure the current user is interacting with their own game
-    if games[user_id]['user_id'] != user_id:
+    if games[user_id].get('user_id') != user_id:
         await query.answer("You cannot interact with this game.", show_alert=True)
         return
 
