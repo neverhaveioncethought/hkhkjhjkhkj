@@ -142,10 +142,10 @@ async def handle_start_options(update: Update, context):
     user_id = query.from_user.id
     data = query.data
 
-    # Ensure 'games[user_id]' exists and initialize 'user_id' key if needed
+    # Initialize the game state if it doesn't exist for the user
     if user_id not in games:
         games[user_id] = {
-            'user_id': user_id,  # Initialize the user_id
+            'user_id': user_id,  # Initialize user_id in the game state
             'bet': 0,
             'level': 0,
             'mode': None,
@@ -154,11 +154,12 @@ async def handle_start_options(update: Update, context):
             'last_bet': 0
         }
 
-    # Safely access 'user_id' to avoid KeyError
-    if games[user_id].get('user_id') != user_id:
-        await query.answer("You cannot interact with this game.", show_alert=True)
+    # Check if this user is trying to interact with their own game
+    if games[user_id]['user_id'] != user_id:
+        await query.answer("This is not your game. You cannot interact with it.", show_alert=True)
         return
 
+    # Handle the appropriate option based on button clicked
     if data == "show_stats":
         await user_stats_command(update, context)
     elif data == "start_game":
@@ -166,7 +167,8 @@ async def handle_start_options(update: Update, context):
     elif data == "check_balance":
         await check_balance(update, context)
 
-    await query.answer()
+    await query.answer()  # Acknowledge the button press
+
 
 
 async def ask_play_location(update: Update, context):
@@ -175,14 +177,23 @@ async def ask_play_location(update: Update, context):
     user_id = query.from_user.id
     user = query.from_user
 
-    if user.username:
-        player_name = f"@{user.username}"
-    else:
-        player_name = user.full_name or user.first_name
+    # Initialize the game state if it doesn't exist for the user
+    if user_id not in games:
+        games[user_id] = {
+            'user_id': user_id,
+            'bet': 0,
+            'level': 0,
+            'mode': None,
+            'correct_buttons': [],
+            'status': 'placing_bet',
+            'last_bet': 0
+        }
+
+    player_name = f"@{user.username}" if user.username else user.full_name or user.first_name
 
     keyboard = [
         [InlineKeyboardButton("Play in DM", callback_data="play_dm"),
-        InlineKeyboardButton("Play here", callback_data="play_group_chat")]
+         InlineKeyboardButton("Play here", callback_data="play_group_chat")]
     ]
 
     await send_reply(
@@ -190,6 +201,7 @@ async def ask_play_location(update: Update, context):
         text=f"{player_name}, Do you want to play in DMs or in the group chat?",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
 
 async def handle_play_location_choice(update: Update, context):
     """Handle the user's choice of where to play the game (DM or group chat)."""
