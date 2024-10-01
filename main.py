@@ -496,84 +496,100 @@ async def set_difficulty(update: Update, context):
     query = update.callback_query
     user = query.from_user
     user_id = user.id
-    data = query.data.split('_')
-
+    data = query.data.split('_')  # Split the callback data
+    
+    # Ensure the user_id in callback data matches the user interacting
     if int(data[1]) != user_id:
         await query.answer("You cannot interact with this game.", show_alert=True)
         return
 
-    # Check if the bet exists in the game session
+    # Ensure the user is interacting with their own game session
+    if games[user_id].get('user_id') != user_id:
+        await query.answer("You cannot interact with this game.", show_alert=True)
+        return
+
+    # Ensure a valid bet exists
     if 'bet' not in games[user_id]:
         await query.answer("No active bet found. Please start a new game.", show_alert=True)
         return
 
-    # Get the player's name (username or full name)
+    # Determine the player's name for messaging
     if user.username:
         player_name = f"@{user.username}"
     else:
         player_name = user.full_name or user.first_name
 
-    # Set the difficulty mode and initialize the game state
+    # Capture the selected mode (easy, hard, special)
     mode = data[0]
     games[user_id]['mode'] = mode
     bet_amount = games[user_id]['bet']
 
+    # Set the multipliers based on the selected mode
     if mode == 'easy':
         games[user_id]['multipliers'] = MULTIPLIERS_EASY
     elif mode == 'hard':
         games[user_id]['multipliers'] = MULTIPLIERS_HARD
     elif mode == 'special':
-        games[user_id]['multipliers'] = MULTIPLIERS_SPECIAL
+        games[user_id]['multipliers'] = MULTIPLIERS_SPECIAL  # For special mode
     else:
         await query.answer("Invalid mode selected", show_alert=True)
         return
 
+    # Create the level buttons based on the selected difficulty
     games[user_id]['level_buttons'] = await create_level_buttons(user_id)
     games[user_id]['status'] = 'playing'
 
     # Enable buttons for the first level
     games[user_id]['level_buttons'] = enable_buttons_for_level(games[user_id]['level_buttons'], 0, user_id)
 
-    # Display the bet amount and start the game
+    # Update the message to reflect the start of the game
     await query.edit_message_text(
-        f"🏢 Towers | 🍁 Fall Season\n👤 Player: {player_name}\n\nMode: {mode.capitalize()}\n💸 Bet amount: *${bet_amount:,.2f}*\n🎉 Let's start the game!",
+        f"🏢 Towers | 🍁 Fall season\n👤 Player: {player_name}\n\nMode: {mode.capitalize()}\n💸 Bet amount: *${bet_amount:,.2f}*\n🎉 Let's start the game!",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(games[user_id]['level_buttons'])
     )
 
 # Create level buttons with bet * multiplier values
 async def create_level_buttons(user_id):
-    """Create initial level buttons with different number of buttons per row based on the mode."""
+    """Create initial level buttons with bet * multiplier values."""
     game = games[user_id]
     bet = game['bet']
     multipliers = game['multipliers']
-    mode = game['mode']  # Get the current mode
+    mode = game['mode']  # Use the mode to determine the number of buttons per row
 
     buttons = []
     
-    # Determine the number of buttons per row based on the mode
+    # Determine how many buttons per row based on the mode
     if mode == 'easy':
-        buttons_per_row = 2
+        num_buttons = 2  # Easy mode has 2 buttons per row
     elif mode == 'hard':
-        buttons_per_row = 3
+        num_buttons = 3  # Hard mode has 3 buttons per row
     elif mode == 'special':
-        buttons_per_row = 4
+        num_buttons = 4  # Special mode has 4 buttons per row
     else:
-        raise ValueError("Invalid game mode")
+        num_buttons = 3  # Default to 3 in case of issues
 
-    # Create buttons based on the number of buttons per row for the current mode
     for level in range(len(multipliers)):
         row = []
-        correct_button = random.randint(0, buttons_per_row - 1)  # Random correct button index
+        correct_button = random.randint(0, num_buttons - 1)  # Random correct button
         game['correct_buttons'].append(correct_button)  # Store the correct button for each level
 
-        for i in range(buttons_per_row):
+        for i in range(num_buttons):
             amount = bet * multipliers[level]
             row.append(InlineKeyboardButton(f"${amount:,.2f}", callback_data=f"choice_{level}_{i}_{user_id}"))
 
         buttons.append(row)
 
     return buttons
+
+
+# Update the keyboard for difficulty selection
+keyboard = [
+    [InlineKeyboardButton("Easy (5 levels)", callback_data=f'easy_{user_id}'),
+     InlineKeyboardButton("Hard (8 levels)", callback_data=f'hard_{user_id}')],
+    [InlineKeyboardButton("Special (8 levels)", callback_data=f'special_{user_id}')],  # Special mode
+    [InlineKeyboardButton("Cancel Bet", callback_data=f'cancel_{user_id}')]
+]
 
 
 # Handle the player's choice and update the game state
