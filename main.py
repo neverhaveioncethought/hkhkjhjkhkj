@@ -413,7 +413,7 @@ async def process_bet(update: Update, context, bet, user_id):
     keyboard = [
         [InlineKeyboardButton("Easy (5 levels)", callback_data=f'easy_{user_id}'),
          InlineKeyboardButton("Hard (8 levels)", callback_data=f'hard_{user_id}')],
-        [InlineKeyboardButton("🍁 Season Mode, callback_data=f'special_{user_id}')],  # Special mode
+        [InlineKeyboardButton("🍁 Season Mode", callback_data=f'special_{user_id}')],  # Special mode
         [InlineKeyboardButton("Cancel Bet", callback_data=f'cancel_{user_id}')]
     ]
 
