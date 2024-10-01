@@ -380,9 +380,10 @@ async def handle_bet_option(update: Update, context):
 
 
 # Process bet logic and display difficulty options
-async def process_bet(update: Update, context, bet, user_id):
+async def process_bet(update: Update, context, bet):
     """Process the bet, check balance, and ask for difficulty selection."""
     user = update.message.from_user if update.message else update.callback_query.from_user
+    user_id = user.id
 
     current_balance = get_user_balance(user_id)
 
@@ -485,58 +486,43 @@ async def set_difficulty(update: Update, context):
     query = update.callback_query
     user = query.from_user
     user_id = user.id
-    data = query.data.split('_')  # Split the callback data
-    
-    # Ensure the user_id in callback data matches the user interacting
+    data = query.data.split('_')
+
     if int(data[1]) != user_id:
         await query.answer("You cannot interact with this game.", show_alert=True)
         return
 
-    # Ensure the user is interacting with their own game session
-    if games[user_id].get('user_id') != user_id:
-        await query.answer("You cannot interact with this game.", show_alert=True)
-        return
-
-    # Ensure a valid bet exists
     if 'bet' not in games[user_id]:
         await query.answer("No active bet found. Please start a new game.", show_alert=True)
         return
 
-    # Determine the player's name for messaging
-    if user.username:
-        player_name = f"@{user.username}"
-    else:
-        player_name = user.full_name or user.first_name
-
-    # Capture the selected mode (easy, hard, special)
     mode = data[0]
     games[user_id]['mode'] = mode
     bet_amount = games[user_id]['bet']
 
-    # Set the multipliers based on the selected mode
     if mode == 'easy':
         games[user_id]['multipliers'] = MULTIPLIERS_EASY
     elif mode == 'hard':
         games[user_id]['multipliers'] = MULTIPLIERS_HARD
     elif mode == 'special':
-        games[user_id]['multipliers'] = MULTIPLIERS_SPECIAL  # For special mode
+        games[user_id]['multipliers'] = MULTIPLIERS_SPECIAL
     else:
         await query.answer("Invalid mode selected", show_alert=True)
         return
 
-    # Create the level buttons based on the selected difficulty
     games[user_id]['level_buttons'] = await create_level_buttons(user_id)
     games[user_id]['status'] = 'playing'
 
-    # Enable buttons for the first level
     games[user_id]['level_buttons'] = enable_buttons_for_level(games[user_id]['level_buttons'], 0, user_id)
 
-    # Update the message to reflect the start of the game
     await query.edit_message_text(
-        f"🏢 Towers | 🍁 Fall season\n👤 Player: {player_name}\n\nMode: {mode.capitalize()}\n💸 Bet amount: *${bet_amount:,.2f}*\n🎉 Let's start the game!",
+        f"🏢 Towers | 🍁 Fall Season 🍂"
+        f"👤 Player: {user.username if user.username else user.full_name}\n\n"
+        f"Mode: {mode.capitalize()}\n💸 Bet amount: *${bet_amount:,.2f}*\n🎉 Let's start the game!",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(games[user_id]['level_buttons'])
     )
+
 
 # Create level buttons with bet * multiplier values
 async def create_level_buttons(user_id):
