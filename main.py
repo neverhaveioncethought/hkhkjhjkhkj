@@ -7,7 +7,7 @@ import logging
 
 MULTIPLIERS_EASY = [1.2, 1.52, 2.07, 2.5, 3.0]
 MULTIPLIERS_HARD = [1.2, 1.52, 2.07, 2.5, 3.5, 4.0, 5.0]
-MULTIPLIERS_SPECIAL = [1.5, 2.0, 2.5, 3.0, 6.0]
+MULTIPLIERS_SPECIAL = [1.5, 2.1, 2.5, 3.2, 4.0, 6.0]
 
 ALLOWED_USER_IDS = [6752577843]
 OWNER_USER_ID = 6752577843
@@ -424,8 +424,8 @@ async def process_bet(update: Update, context, bet, user_id):
     # Display difficulty selection buttons
     keyboard = [
         [InlineKeyboardButton("Easy (5 levels)", callback_data=f'easy_{user_id}'),
-         InlineKeyboardButton("Hard (8 levels)", callback_data=f'hard_{user_id}'),
-         InlineKeyboardButton("Special Season (5 levels)", callback_data=f'special_{user_id}')],
+         InlineKeyboardButton("Hard (8 levels)", callback_data=f'hard_{user_id}')],
+        [InlineKeyboardButton("Extreme (WIP)", callback_data=f'special_{user_id}')],
         [InlineKeyboardButton("Cancel Bet", callback_data=f'cancel_{user_id}')]
     ]
 
