@@ -312,10 +312,7 @@ async def handle_bet_option(update: Update, context):
     user_id = user.id
     data = query.data.split('_')
 
-    if user_id not in games or games[user_id]['user_id'] != user_id:
-        await query.answer("You cannot interact with this game.", show_alert=True)
-        return
-        
+    # Ensure the user is initialized in the games dictionary
     if user_id not in games:
         games[user_id] = {
             'bet': 0,
@@ -323,46 +320,42 @@ async def handle_bet_option(update: Update, context):
             'mode': None,
             'correct_buttons': [],
             'status': 'placing_bet',
-            'last_bet': 0  
+            'last_bet': 0,
+            'user_id': user_id  # Properly initialize with 'user_id'
         }
 
-    game = games[user_id]  
+    # Make sure the current user is interacting with their own game
+    if games[user_id]['user_id'] != user_id:
+        await query.answer("You cannot interact with this game.", show_alert=True)
+        return
 
-    
-    if 'last_bet' not in game:
-        game['last_bet'] = 0
+    game = games[user_id]  # Now, 'user_id' is guaranteed to exist in the dictionary
 
+    # Process the bet options (1/4, 1/2, custom, etc.)
     if user.username:
         player_name = f"@{user.username}"
     else:
         player_name = user.full_name or user.first_name
 
-
-   
     current_balance = get_user_balance(user_id)
-
-    
     last_bet = current_balance if game['last_bet'] == 0 else game['last_bet']
 
-    
     if data[1] == 'quarter':
-        bet = last_bet / 4  
+        bet = last_bet / 4
     elif data[1] == 'half':
-        bet = last_bet / 2  
+        bet = last_bet / 2
     elif data[1] == 'double':
-        bet = last_bet * 2  
+        bet = last_bet * 2
     elif data[1] == 'custom':
-        
         game['status'] = 'awaiting_custom_bet'
         await send_reply(
             update,
             context,
             text="Please enter your custom bet amount:",
-            reply_markup=None  
+            reply_markup=None
         )
         return
 
-    
     if bet > current_balance:
         await send_reply(
             update,
@@ -371,8 +364,8 @@ async def handle_bet_option(update: Update, context):
         )
         return
 
-    
     await process_bet(update, context, bet, user_id)
+
 
 
 async def process_bet(update: Update, context, bet, user_id):
