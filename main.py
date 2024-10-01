@@ -424,8 +424,8 @@ async def process_bet(update: Update, context, bet, user_id):
     # Display difficulty selection buttons
     keyboard = [
         [InlineKeyboardButton("Easy (5 levels)", callback_data=f'easy_{user_id}'),
-         InlineKeyboardButton("Hard (8 levels)", callback_data=f'hard_{user_id}'),
-         InlineKeyboardButton("Special Season (5 levels)", callback_data=f'special_{user_id}')],
+         InlineKeyboardButton("Hard (8 levels)", callback_data=f'hard_{user_id}')],
+        [InlineKeyboardButton("Season mode", callback_data=f'special_{user_id}')],
         [InlineKeyboardButton("Cancel Bet", callback_data=f'cancel_{user_id}')]
     ]
 
