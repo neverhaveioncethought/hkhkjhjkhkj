@@ -142,18 +142,32 @@ async def handle_start_options(update: Update, context):
     user_id = query.from_user.id
     data = query.data
 
-    if user_id not in games or games[user_id]['user_id'] != user_id:
+    # Ensure 'games[user_id]' exists and initialize 'user_id' key if needed
+    if user_id not in games:
+        games[user_id] = {
+            'user_id': user_id,  # Initialize the user_id
+            'bet': 0,
+            'level': 0,
+            'mode': None,
+            'correct_buttons': [],
+            'status': 'placing_bet',
+            'last_bet': 0
+        }
+
+    # Safely access 'user_id' to avoid KeyError
+    if games[user_id].get('user_id') != user_id:
         await query.answer("You cannot interact with this game.", show_alert=True)
         return
 
     if data == "show_stats":
-        await user_stats_command(update, context)  
+        await user_stats_command(update, context)
     elif data == "start_game":
         await ask_play_location(update, context)
     elif data == "check_balance":
-        await check_balance(update, context)  
+        await check_balance(update, context)
 
-    await query.answer()  
+    await query.answer()
+
 
 async def ask_play_location(update: Update, context):
     """Ask the user where they want to play (DM or group chat)."""
