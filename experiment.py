@@ -314,7 +314,6 @@ async def handle_bet_option(update: Update, context):
     user_id = user.id
     data = query.data.split('_')
 
-    # Ensure the user is initialized in the games dictionary
     if user_id not in games:
         games[user_id] = {
             'bet': 0,
@@ -326,14 +325,12 @@ async def handle_bet_option(update: Update, context):
             'user_id': user_id  # Properly initialize with 'user_id'
         }
 
-    # Make sure the current user is interacting with their own game
     if games[user_id].get('user_id') != user_id:
         await query.answer("You cannot interact with this game.", show_alert=True)
         return
 
-    game = games[user_id]  # Now, 'user_id' is guaranteed to exist in the dictionary
+    game = games[user_id]
 
-    # Process the bet options (1/4, 1/2, custom, etc.)
     if user.username:
         player_name = f"@{user.username}"
     else:
@@ -349,7 +346,8 @@ async def handle_bet_option(update: Update, context):
     elif data[1] == 'double':
         bet = last_bet * 2
     elif data[1] == 'custom':
-        game['status'] = 'awaiting_custom_bet'
+        # Set the status to 'awaiting_custom_bet' to listen for the custom bet
+        games[user_id]['status'] = 'awaiting_custom_bet'
         await send_reply(
             update,
             context,
@@ -367,7 +365,6 @@ async def handle_bet_option(update: Update, context):
         return
 
     await process_bet(update, context, bet, user_id)
-
 
 
 async def process_bet(update: Update, context, bet, user_id):
@@ -768,27 +765,21 @@ def enable_buttons_for_level(buttons, level, user_id):
 
 async def receive_bet(update: Update, context):
     """Receive the custom bet amount if selected."""
-    if update.message:
-        user_id = update.message.from_user.id  
-        user = update.message.from_user  
-    else:
-        return  
+    user_id = update.message.from_user.id
+    user = update.message.from_user
 
-    
     if user_id not in games or games[user_id].get('status') != 'awaiting_custom_bet':
-        return  
+        return  # Ignore if the user is not expected to input a custom bet
 
-    
     if user.username:
         player_name = f"@{user.username}"
     else:
         player_name = user.full_name or user.first_name
 
     try:
-        
+        # Get the custom bet from the user's input
         bet = float(update.message.text)
 
-        
         if bet > get_user_balance(user_id):
             await send_reply(update, context, f"👤 Player: {player_name}\n\n❌ Insufficient balance ❌\nYour current balance: *${get_user_balance(user_id):,.2f}*")
             return
@@ -796,12 +787,12 @@ async def receive_bet(update: Update, context):
             await send_reply(update, context, "Please enter a valid bet amount greater than 0.")
             return
 
-        
+        # Proceed with the bet now that the custom amount is received
         await process_bet(update, context, bet, user_id)
 
     except ValueError:
-        # Only send the error message if the bot is in the custom betting phase
         await send_reply(update, context, "Please enter a valid number.")
+
 
 
 async def add_balance(update: Update, context):
@@ -917,6 +908,7 @@ def main():
     app.add_handler(CommandHandler("reset_stats", reset_stats))
     app.add_handler(CommandHandler("shutdown", shutdown))
 
+    # Ensure this handler is set up to listen for custom bet input
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_bet))
 
     app.add_handler(CallbackQueryHandler(handle_play_location_choice, pattern='^play_dm|play_group_chat'))
@@ -934,3 +926,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
