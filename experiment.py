@@ -314,6 +314,7 @@ async def handle_bet_option(update: Update, context):
     user_id = user.id
     data = query.data.split('_')
 
+    # Initialize game state if user_id is not in games
     if user_id not in games:
         games[user_id] = {
             'bet': 0,
@@ -321,10 +322,11 @@ async def handle_bet_option(update: Update, context):
             'mode': None,
             'correct_buttons': [],
             'status': 'placing_bet',
-            'last_bet': 0,
-            'user_id': user_id  # Properly initialize with 'user_id'
+            'last_bet': 0,  # Ensure 'last_bet' is initialized
+            'user_id': user_id
         }
 
+    # Ensure the 'user_id' field exists
     if games[user_id].get('user_id') != user_id:
         await query.answer("You cannot interact with this game.", show_alert=True)
         return
@@ -337,7 +339,9 @@ async def handle_bet_option(update: Update, context):
         player_name = user.full_name or user.first_name
 
     current_balance = get_user_balance(user_id)
-    last_bet = current_balance if game['last_bet'] == 0 else game['last_bet']
+
+    # Safely retrieve or initialize last_bet
+    last_bet = game.get('last_bet', current_balance)
 
     if data[1] == 'quarter':
         bet = last_bet / 4
@@ -365,6 +369,7 @@ async def handle_bet_option(update: Update, context):
         return
 
     await process_bet(update, context, bet, user_id)
+
 
 
 async def process_bet(update: Update, context, bet, user_id):
