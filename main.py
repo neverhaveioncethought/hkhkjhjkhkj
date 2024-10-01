@@ -114,6 +114,11 @@ async def start(update: Update, context):
     """Show game options (Play Game, Show Stats, Check Balance)."""
     user = update.message.from_user if update.message else update.callback_query.from_user
     user_id = user.id
+    query = update.callback_query
+
+    if games[user_id].get('user_id') != user_id:
+        await query.answer("You cannot interact with this game.", show_alert=True)
+        return
 
     intro_message = (
         "*Welcome to the Towers Game bot!*\n\n"
@@ -154,6 +159,10 @@ async def ask_play_location(update: Update, context):
     user_id = query.from_user.id
     user = query.from_user
 
+    if games[user_id].get('user_id') != user_id:
+        await query.answer("You cannot interact with this game.", show_alert=True)
+        return
+    
     if user.username:
         player_name = f"@{user.username}"
     else:
@@ -216,6 +225,7 @@ async def tower(update: Update, context):
     """Start the Tower game and prompt for bet amount."""
     user = update.message.from_user if update.message else update.callback_query.from_user
     user_id = user.id
+    query = update.callback_query
 
     if user.username:
         player_name = f"@{user.username}"
@@ -227,7 +237,10 @@ async def tower(update: Update, context):
     quarter_balance = current_balance / 4
     half_balance = current_balance / 2
 
-    
+    if games[user_id].get('user_id') != user_id:
+        await query.answer("You cannot interact with this game.", show_alert=True)
+        return
+        
     if user_id not in games:
         games[user_id] = {'bet': 0, 'level': 0, 'mode': None, 'correct_buttons': [], 'status': 'placing_bet'}
 
@@ -250,6 +263,7 @@ async def check_balance(update: Update, context):
     """Check and display the user's current balance."""
     user = update.message.from_user if update.message else update.callback_query.from_user
     user_id = user.id
+
 
     if user.username:
         player_name = f"@{user.username}"
@@ -297,7 +311,10 @@ async def handle_bet_option(update: Update, context):
     user_id = user.id
     data = query.data.split('_')
 
-    
+    if games[user_id].get('user_id') != user_id:
+        await query.answer("You cannot interact with this game.", show_alert=True)
+        return
+        
     if user_id not in games:
         games[user_id] = {
             'bet': 0,
@@ -339,7 +356,7 @@ async def handle_bet_option(update: Update, context):
         await send_reply(
             update,
             context,
-            text="Please enter your custom bet amount:",
+            text=f"👤 Player: {player_name}\n\nPlease enter your custom bet amount:",
             reply_markup=None  
         )
         return
@@ -427,7 +444,10 @@ async def handle_cashout(update: Update, context):
     level = game['level']
     bet = game['bet']
 
-    
+    if games[user_id].get('user_id') != user_id:
+        await query.answer("You cannot interact with this game.", show_alert=True)
+        return
+        
     player_name = f"@{user.username}" if user.username else user.full_name
 
     
@@ -476,7 +496,10 @@ async def set_difficulty(update: Update, context):
         await query.answer("You cannot interact with this game.", show_alert=True)
         return
 
-    
+    if games[user_id].get('user_id') != user_id:
+        await query.answer("You cannot interact with this game.", show_alert=True)
+        return
+       
     if 'bet' not in games[user_id]:
         await query.answer("No active bet found. Please start a new game.", show_alert=True)
         return
@@ -698,7 +721,10 @@ async def cancel_bet(update: Update, context):
 
     bet_amount = game.get('bet', 0)  
 
-    
+    if games[user_id].get('user_id') != user_id:
+        await query.answer("You cannot interact with this game.", show_alert=True)
+        return
+        
     current_balance = get_user_balance(user_id)
     new_balance = current_balance + bet_amount
     update_user_balance(user_id, new_balance)
