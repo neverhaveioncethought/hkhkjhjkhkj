@@ -384,10 +384,7 @@ async def process_bet(update: Update, context, bet, user_id):
     """Process the bet, check balance, and ask for difficulty selection."""
     user = update.message.from_user if update.message else update.callback_query.from_user
 
-    # Get the user's current balance from the database
     current_balance = get_user_balance(user_id)
-
-    logger.info(f"User {user_id} current balance before placing bet: ${current_balance:.2f}")
 
     if user.username:
         player_name = f"@{user.username}"
@@ -398,34 +395,25 @@ async def process_bet(update: Update, context, bet, user_id):
         await send_reply(update, context, f"👤 Player: {player_name}\n\n❌ Insufficient balance ❌\n\nYour current balance is: *${current_balance:,.2f}*")
         return
 
-    # Deduct the bet from the user's balance (this should only happen once)
     new_balance = current_balance - bet
-    update_user_balance(user_id, new_balance)  # Update the balance in the database
-    
-    logger.info(f"User {user_id} placing bet of ${bet:.2f}, new balance after bet: ${new_balance:.2f}")
+    update_user_balance(user_id, new_balance)
 
-    # Get user's current stats from the database
     total_bet, total_winnings = get_user_stats(user_id)
-
-    # Update the total bet in the stats
     total_bet += bet
     update_user_stats(user_id, total_bet, total_winnings)
 
-    # Store the bet and update the last_bet in the game state
     games[user_id]['bet'] = bet
-    games[user_id]['last_bet'] = bet  # Update last_bet after placing the bet
+    games[user_id]['last_bet'] = bet
     games[user_id]['level'] = 0
     games[user_id]['mode'] = None
     games[user_id]['correct_buttons'] = []
     games[user_id]['status'] = 'placing_bet'
 
-    logger.info(f"Game initialized for user {user_id} with bet: ${bet:.2f}")
-
-    # Display difficulty selection buttons
+    # Define the keyboard here, where user_id is available
     keyboard = [
         [InlineKeyboardButton("Easy (5 levels)", callback_data=f'easy_{user_id}'),
          InlineKeyboardButton("Hard (8 levels)", callback_data=f'hard_{user_id}')],
-        [InlineKeyboardButton("Season mode", callback_data=f'special_{user_id}')],
+        [InlineKeyboardButton("🍁 Season Mode, callback_data=f'special_{user_id}')],  # Special mode
         [InlineKeyboardButton("Cancel Bet", callback_data=f'cancel_{user_id}')]
     ]
 
@@ -435,6 +423,7 @@ async def process_bet(update: Update, context, bet, user_id):
         f"👤 Player: {player_name}\n\n💸 You bet: ${bet:,.2f}\n🔐 Choose difficulty level or cancel:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
 
 
 
