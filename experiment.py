@@ -115,6 +115,9 @@ async def start(update: Update, context):
     user = update.message.from_user if update.message else update.callback_query.from_user
     user_id = user.id
 
+    if user_id not in games:
+        games[user_id] = {'user_id': user_id}
+        
     intro_message = (
         "*Welcome to the Towers Game bot!*\n\n"
         "In Towers, you'll bet a certain amount and choose a difficulty level. "
@@ -138,6 +141,10 @@ async def handle_start_options(update: Update, context):
     query = update.callback_query
     user_id = query.from_user.id
     data = query.data
+
+    if user_id not in games or games[user_id]['user_id'] != user_id:
+        await query.answer("You cannot interact with this game.", show_alert=True)
+        return
 
     if data == "show_stats":
         await user_stats_command(update, context)  
@@ -176,6 +183,10 @@ async def handle_play_location_choice(update: Update, context):
     user_id = query.from_user.id
     data = query.data
 
+    if user_id not in games or games[user_id]['user_id'] != user_id:
+        await query.answer("You cannot interact with this game.", show_alert=True)
+        return
+    
     if data == "play_dm":
         user_preferences[user_id] = "dm"
         await query.answer("You chose to play in DM.")
@@ -708,7 +719,7 @@ async def cancel_bet(update: Update, context):
         await query.answer("You cannot interact with this game.", show_alert=True)
         return
 
-    
+
     game = games.get(user_id)
     if not game or game['status'] != 'placing_bet':
         await query.answer("No active bet to cancel.", show_alert=True)
