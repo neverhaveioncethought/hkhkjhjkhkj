@@ -964,7 +964,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_play_location_choice, pattern='^play_dm|play_group_chat'))
     app.add_handler(CallbackQueryHandler(handle_start_options, pattern='^show_stats|start_game|check_balance'))
     app.add_handler(CallbackQueryHandler(handle_bet_option, pattern='^bet_'))
-    app.add_handler(CallbackQueryHandler(set_difficulty, pattern='^easy_|hard_'))
+    app.add_handler(CallbackQueryHandler(set_difficulty, pattern='^easy_|hard_|special_'))
     app.add_handler(CallbackQueryHandler(cancel_bet, pattern='^cancel_'))
     app.add_handler(CallbackQueryHandler(handle_choice, pattern='^choice_'))
     app.add_handler(CallbackQueryHandler(handle_cashout, pattern='^cashout_'))
