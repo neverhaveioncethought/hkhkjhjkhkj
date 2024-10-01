@@ -348,8 +348,7 @@ async def handle_bet_option(update: Update, context):
             'mode': None,
             'correct_buttons': [],
             'status': 'placing_bet',
-            'last_bet': 0,  # Ensure 'last_bet' is initialized
-            'user_id': user_id
+            'last_bet': 0
         }
 
     # Ensure the 'user_id' field exists
@@ -796,11 +795,15 @@ def enable_buttons_for_level(buttons, level, user_id):
 
 async def receive_bet(update: Update, context):
     """Receive the custom bet amount if selected."""
-    user_id = update.message.from_user.id
-    user = update.message.from_user
+    if update.message:
+        user_id = update.message.from_user.id  # User sending the custom bet
+        user = update.message.from_user
+    else:
+        return  # If no message, there's nothing to handle
 
+    # Make sure the game exists and is in the 'awaiting_custom_bet' state
     if user_id not in games or games[user_id].get('status') != 'awaiting_custom_bet':
-        return  # Ignore if the user is not expected to input a custom bet
+        return  # If the user isn't expected to enter a custom bet, exit
 
     if user.username:
         player_name = f"@{user.username}"
@@ -808,21 +811,26 @@ async def receive_bet(update: Update, context):
         player_name = user.full_name or user.first_name
 
     try:
-        # Get the custom bet from the user's input
+        # Try converting the input to a float
         bet = float(update.message.text)
 
-        if bet > get_user_balance(user_id):
-            await send_reply(update, context, f"👤 Player: {player_name}\n\n❌ Insufficient balance ❌\nYour current balance: *${get_user_balance(user_id):,.2f}*")
-            return
-        elif bet <= 0:
+        # Check if the bet is valid (greater than zero and within user's balance)
+        if bet <= 0:
             await send_reply(update, context, "Please enter a valid bet amount greater than 0.")
             return
 
-        # Proceed with the bet now that the custom amount is received
+        # Check if the user has enough balance
+        if bet > get_user_balance(user_id):
+            await send_reply(update, context, f"👤 Player: {player_name}\n\n❌ Insufficient balance ❌\nYour current balance: *${get_user_balance(user_id):,.2f}*")
+            return
+
+        # Process the bet if it's valid
         await process_bet(update, context, bet, user_id)
 
     except ValueError:
+        # Handle cases where the user doesn't input a valid number
         await send_reply(update, context, "Please enter a valid number.")
+
 
 
 
