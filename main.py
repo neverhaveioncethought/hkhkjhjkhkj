@@ -959,35 +959,32 @@ def enable_buttons_for_level(buttons, level, user_id):
 
 
 # Receive and process the custom bet
+# Function that processes receiving a custom bet amount
 async def receive_bet(update: Update, context):
     """Receive the custom bet amount if selected."""
     if update.message:
-        user_id = update.message.from_user.id  # User ID from the message
-        user = update.message.from_user  # Get the user from the message
+        user_id = update.message.from_user.id  # Get the user ID from the message
+        user = update.message.from_user  # Get the user object
     else:
-        return  # Safeguard: If there's no message, exit early
+        return  # Exit early if there's no message
 
-    # Check if the user is in the game phase expecting a custom bet
-    if user_id not in games or games[user_id].get('status') != 'awaiting_custom_bet':
-        return  # Ignore messages if the game is not in the custom bet-placing phase
+    # Fetch the game state
+    game = games.get(user_id)
 
-    # Reset level to ensure new game session
-    games[user_id]['level'] = 0
-    games[user_id]['correct_buttons'] = []
-    games[user_id]['status'] = 'playing'
+    # Ensure the game state exists and is awaiting a custom bet
+    if not game or game['status'] != 'awaiting_custom_bet':
+        return  # Ignore messages if the game is not in the custom bet phase
 
-    if user.username:
-        player_name = f"@{user.username}"
-    else:
-        player_name = user.full_name or user.first_name
+    # Get the user's current balance
+    current_balance = get_user_balance(user_id)
 
     try:
-        # Convert the message text to a float to interpret it as a bet amount
-        bet = float(update.message.text)
+        # Convert the message text to a float to interpret it as a bet amount, and handle commas
+        bet = float(update.message.text.replace(',', ''))
 
         # Validate bet amount
-        if bet > get_user_balance(user_id):
-            await send_reply(update, context, f"👤 Player: {player_name}\n\n❌ Insufficient balance ❌\n🏦 Your current balance: *${get_user_balance(user_id):,.2f}*")
+        if bet > current_balance:
+            await send_reply(update, context, f"👤 Player: {user.first_name}\n\n❌ Insufficient balance ❌\n🏦 Your current balance: *${current_balance:,.2f}*")
             return
         elif bet <= 0:
             await send_reply(update, context, "Please enter a valid bet amount greater than 0.")
@@ -997,9 +994,8 @@ async def receive_bet(update: Update, context):
         await process_bet(update, context, bet, user_id)
 
     except ValueError:
-        # Only send the error message if the bot is in the custom betting phase
+        # Handle invalid number format (e.g., non-numeric input)
         await send_reply(update, context, "Please enter a valid number.")
-
 
 # Add balance to the user's account
 async def add_balance(update: Update, context):
