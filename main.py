@@ -227,6 +227,29 @@ async def send_reply(update, context, text, reply_markup=None):
     except Exception as e:
         print(f"Error sending message: {e}")
 
+async def add_admin(update: Update, context):
+    """Allow the bot owner to add a new admin by user ID."""
+    user = update.message.from_user if update.message else update.callback_query.from_user
+    user_id = user.id
+
+    if user_id != OWNER_USER_ID:
+        await send_reply(update, context, "You are not authorized to add admins.")
+        return
+
+    if len(context.args) != 1:
+        await send_reply(update, context, "Usage: /add_admin <user_id>")
+        return
+
+    try:
+        new_admin_id = int(context.args[0])
+        if new_admin_id not in ALLOWED_USER_IDS:
+            ALLOWED_USER_IDS.append(new_admin_id)
+            await send_reply(update, context, f"User {new_admin_id} has been added as an admin.")
+        else:
+            await send_reply(update, context, f"User {new_admin_id} is already an admin.")
+    except ValueError:
+        await send_reply(update, context, "Please provide a valid user ID.")
+        
 
 # /tower command to start the game and offer bet options
 async def tower(update: Update, context):
@@ -942,6 +965,7 @@ def main():
     app.add_handler(CommandHandler("reset_balances", reset_balances))
     app.add_handler(CommandHandler("reset_stats", reset_stats))
     app.add_handler(CommandHandler("shutdown", shutdown))
+    app.add_handler(CommandHandler("add_admin", add_admin))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_bet))
 
