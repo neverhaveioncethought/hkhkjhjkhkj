@@ -503,7 +503,7 @@ async def handle_cashout(update: Update, context):
     # Send a message to the user confirming their cashout with total winnings
     await send_reply(
         update, context,
-        text=f"👤 Player: {player_name}\n\n💰 You've cashed out!\n🎉 Total winnings: *${total_winnings:,.2f}*\n💸 Your new balance is *${new_balance:,.2f}*"
+        text=f"👤 Player: {player_name}\n\n💰 You've cashed out!\n🎉 Total won: *${total_winnings:,.2f}*\n💸 Your new balance is *${new_balance:,.2f}*"
     )
 
     # Mark the game as cashed out and disable further interactions
