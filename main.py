@@ -409,7 +409,7 @@ async def handle_bet_option(update: Update, context):
     
     # Check if the game state already exists for the user; initialize if not
     if user_id not in games:
-        # Initialize game state for the user with default values
+        # Properly initialize the game state with all required keys
         games[user_id] = {
             'bet': 0,
             'level': 0,
@@ -639,13 +639,8 @@ async def set_difficulty(update: Update, context):
     # Fetch the game state from the games dictionary
     game = games.get(user_id)
 
-    # Check if game exists
-    if not game:
-        await query.answer("No active game found. Please start a new game.", show_alert=True)
-        return
-
-    # Check if the initiated_by key exists
-    if 'initiated_by' not in game:
+    # Check if game exists and is properly initialized
+    if not game or 'initiated_by' not in game:
         await query.answer("Game state is invalid. Please restart the game.", show_alert=True)
         return
 
@@ -669,7 +664,7 @@ async def set_difficulty(update: Update, context):
         await query.answer("Invalid mode selected", show_alert=True)
         return
 
-    # Create the level buttons based on the selected difficulty mode
+    # Proceed with creating level buttons and updating the game state
     game['level_buttons'] = await create_level_buttons(user_id)
     game['status'] = 'playing'
 
