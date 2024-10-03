@@ -501,7 +501,7 @@ async def leaderboard(update: Update, context):
         medal = medals[index - 1] if index <= 3 else ''  # Add a medal for top 3 users
 
         # Add each user to the leaderboard text
-        leaderboard_text += f"{medal} {index}. {username}: *${total_bet:,.2f}* wagered\n"
+        leaderboard_text += f"{medal} {index}. {username}: *${total_bet:,.2f}*\n"
 
     # Send the leaderboard as a message
     await update.message.reply_text(leaderboard_text, parse_mode="Markdown")
